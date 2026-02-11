@@ -14,7 +14,7 @@
 │   └── ma-status                       ← ステータス確認
 ├── scripts/
 │   ├── inbox_write.sh                  ← アトミック書き込み
-│   ├── inbox_watcher.sh                ← inotifywait 監視デーモン
+│   ├── inbox_watcher.sh                ← fswatch 監視デーモン
 │   └── escalation.sh                  ← 3段階エスカレーション
 ├── templates/
 │   ├── CLAUDE.md.template              ← プロジェクト初期化時にコピーされる雛形
@@ -414,7 +414,7 @@ check_dependency() {
 
 check_dependency tmux     "sudo apt install tmux  /  brew install tmux"
 check_dependency claude   "https://code.claude.com からインストール"
-check_dependency inotifywait "sudo apt install inotify-tools（Phase 2 で必要）" || true
+check_dependency fswatch "brew install fswatch（Phase 2 で必要）" || true
 
 # 2. グローバルディレクトリを配置
 INSTALL_DIR="$HOME/.ol-soldiers"
@@ -605,8 +605,8 @@ touch "$INBOX_FILE"
 log "監視開始: ${INBOX_FILE}"
 
 while true; do
-    # inotifywait: MODIFY イベントを待機（ブロッキング、CPU消費ゼロ）
-    inotifywait -e modify -qq "$INBOX_FILE" 2>/dev/null
+    # fswatch: ファイル変更イベントを1件待機（ブロッキング、CPU消費ゼロ）
+    fswatch -1 "$INBOX_FILE" >/dev/null 2>&1
 
     log "変更検知"
 

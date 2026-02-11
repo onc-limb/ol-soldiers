@@ -16,7 +16,7 @@ check_dependency() {
 
 check_dependency tmux     "sudo apt install tmux  /  brew install tmux"
 check_dependency claude   "https://code.claude.com からインストール"
-check_dependency inotifywait "sudo apt install inotify-tools（Phase 2 で必要）" || true
+check_dependency fswatch "brew install fswatch（Phase 2 で必要）" || true
 
 # 2. グローバルディレクトリを配置
 INSTALL_DIR="$HOME/.ol-soldiers"
