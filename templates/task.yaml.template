@@ -1,0 +1,12 @@
+# タスク割り当て
+task_id: ""
+command_id: ""
+assigned_to: ""
+status: "assigned"        # assigned → in_progress → completed/failed/blocked
+description: ""
+acceptance_criteria: []
+target_path: ""
+context_files: []         # 事前に読むべきファイル
+dependencies: []          # 先行タスクのtask_id（Phase 4で使用）
+bloom_level: 3            # 1-6（Phase 3で使用）
+created_at: ""

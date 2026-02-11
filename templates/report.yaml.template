@@ -1,0 +1,13 @@
+# 完了報告
+task_id: ""
+agent_id: ""
+status: ""                # completed / failed / blocked
+summary: ""
+files_modified: []
+test_results: ""
+issues: ""
+skill_candidate:          # Phase 4 で使用
+  found: false
+  name: ""
+  reason: ""
+completed_at: ""

@@ -1,0 +1,92 @@
+#!/bin/bash
+# commands/ols-start
+set -euo pipefail
+source "$(dirname "$0")/../lib/common.sh"
+
+PROJECT_ROOT="$(pwd)"
+OLS_DIR="${PROJECT_ROOT}/.ol-soldiers"
+SOLDIER_COUNT="${1:-2}"   # 引数でソルジャー数を指定（デフォルト2）
+
+# --- .ol-soldiers ディレクトリの初期化 ---
+init_project_dir() {
+    mkdir -p "${OLS_DIR}"/{queue/{tasks,reports,inbox},logs}
+
+    # キューファイルを初期化（空ファイル作成）
+    touch "${OLS_DIR}/queue/commander_to_sergeant.yaml"
+    for i in $(seq 1 "$SOLDIER_COUNT"); do
+        touch "${OLS_DIR}/queue/tasks/soldier${i}.yaml"
+        touch "${OLS_DIR}/queue/reports/soldier${i}_report.yaml"
+        touch "${OLS_DIR}/queue/inbox/soldier${i}.yaml"
+    done
+    touch "${OLS_DIR}/queue/inbox/sergeant.yaml"
+
+    # dashboard.md を初期化
+    echo "# Dashboard - $(date '+%Y-%m-%d %H:%M')" > "${OLS_DIR}/dashboard.md"
+    echo "状態: 待機中" >> "${OLS_DIR}/dashboard.md"
+
+    # CLAUDE.md がなければテンプレートからコピー
+    if [ ! -f "${PROJECT_ROOT}/CLAUDE.md" ]; then
+        local TEMPLATE_DIR
+        TEMPLATE_DIR="$(dirname "$0")/../templates"
+        cp "${TEMPLATE_DIR}/CLAUDE.md.template" "${PROJECT_ROOT}/CLAUDE.md"
+        echo "[ols-start] CLAUDE.md を生成しました。プロジェクトに合わせて編集してください。"
+    fi
+
+    # config.yaml がなければデフォルト生成
+    if [ ! -f "${OLS_DIR}/config.yaml" ]; then
+        cat > "${OLS_DIR}/config.yaml" <<EOF
+project_name: "$(basename "$PROJECT_ROOT")"
+project_root: "${PROJECT_ROOT}"
+soldier_count: ${SOLDIER_COUNT}
+models:
+  commander: "opus"
+  sergeant: "opus"
+  soldiers_default: "sonnet"
+language: "ja"
+EOF
+    fi
+}
+
+# --- tmuxセッション作成 ---
+create_sessions() {
+    # 既存セッションがあれば確認
+    if tmux has-session -t ols-commander 2>/dev/null; then
+        echo "[ols-start] 既存セッションが見つかりました。停止してから再実行してください。"
+        echo "  停止コマンド: ols-stop"
+        exit 1
+    fi
+
+    # コマンダーセッション
+    tmux new-session -d -s ols-commander -c "$PROJECT_ROOT" -x 200 -y 50
+    tmux set-option -p -t ols-commander:0.0 @agent_id "commander"
+    tmux set-option -p -t ols-commander:0.0 @model_name "opus"
+    tmux send-keys -t ols-commander:0.0 \
+        "claude --model opus --dangerously-skip-permissions" Enter
+
+    # チームセッション
+    tmux new-session -d -s ols-team -c "$PROJECT_ROOT" -x 200 -y 50
+
+    # ソルジャーペインを作成
+    for i in $(seq 2 "$SOLDIER_COUNT"); do
+        tmux split-window -t ols-team -c "$PROJECT_ROOT"
+    done
+    tmux select-layout -t ols-team tiled
+
+    # 各ペインにIDを設定しCLIを起動
+    for i in $(seq 1 "$SOLDIER_COUNT"); do
+        local pane_index=$((i - 1))
+        tmux set-option -p -t "ols-team:0.${pane_index}" @agent_id "soldier${i}"
+        tmux set-option -p -t "ols-team:0.${pane_index}" @model_name "sonnet"
+        tmux send-keys -t "ols-team:0.${pane_index}" \
+            "claude --model sonnet --dangerously-skip-permissions" Enter
+    done
+
+    echo "[ols-start] 起動完了"
+    echo "  コマンダー: tmux attach -t ols-commander"
+    echo "  チーム:     tmux attach -t ols-team"
+    echo "  ソルジャー数: ${SOLDIER_COUNT}"
+}
+
+# --- メイン ---
+init_project_dir
+create_sessions
