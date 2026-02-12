@@ -14,7 +14,6 @@ if [ -f "${OLS_DIR}/logs/watcher.pids" ]; then
 fi
 
 # 2. tmuxセッションを終了
-tmux kill-session -t ols-commander 2>/dev/null && ols_log INFO "ols-commander を停止"
-tmux kill-session -t ols-team 2>/dev/null && ols_log INFO "ols-team を停止"
+tmux kill-session -t ols 2>/dev/null && ols_log INFO "ols を停止"
 
 ols_log INFO "全セッションを停止しました。"

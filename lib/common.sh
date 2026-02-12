@@ -17,24 +17,19 @@ get_ols_dir() {
     echo "${project_root}/.ol-soldiers"
 }
 
-# エージェントIDからペインターゲットを解決
-resolve_pane_target() {
-    local agent_id="$1"
-    case "$agent_id" in
-        commander) echo "ols-commander:0.0" ;;
-        sergeant)  echo "ols-team:0.0" ;;
-        soldier*)
-            local num="${agent_id#soldier}"
-            # サージェントが Pane 0 を使うため、ソルジャーは Pane num
-            echo "ols-team:0.${num}"
-            ;;
-    esac
-}
-
-# @agent_id からペインを逆引き
+# @agent_id からペインインデックスを取得
 find_pane_by_agent_id() {
     local target_id="$1"
     local session="$2"
     tmux list-panes -t "$session" -F '#{pane_index} #{@agent_id}' \
         | awk -v id="$target_id" '$2 == id {print $1}'
+}
+
+# エージェントIDからペインターゲット文字列を解決
+resolve_pane_target() {
+    local agent_id="$1"
+    local session="${2:-ols}"
+    local pane_index
+    pane_index=$(find_pane_by_agent_id "$agent_id" "$session")
+    echo "${session}:0.${pane_index}"
 }

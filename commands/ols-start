@@ -5,7 +5,8 @@ source "$(dirname "$0")/../lib/common.sh"
 
 PROJECT_ROOT="$(pwd)"
 OLS_DIR="${PROJECT_ROOT}/.ol-soldiers"
-SOLDIER_COUNT="${1:-2}"   # 引数でソルジャー数を指定（デフォルト2）
+SOLDIER_COUNT="${1:-4}"
+SESSION="ols"
 
 # --- ロール注入用のシステムプロンプトを生成 ---
 build_claude_cmd() {
@@ -20,7 +21,6 @@ build_claude_cmd() {
 init_project_dir() {
     mkdir -p "${OLS_DIR}"/{queue/{tasks,reports,inbox},logs}
 
-    # キューファイルを初期化（空ファイル作成）
     touch "${OLS_DIR}/queue/commander_to_sergeant.yaml"
     for i in $(seq 1 "$SOLDIER_COUNT"); do
         touch "${OLS_DIR}/queue/tasks/soldier${i}.yaml"
@@ -30,11 +30,9 @@ init_project_dir() {
     touch "${OLS_DIR}/queue/inbox/sergeant.yaml"
     touch "${OLS_DIR}/queue/inbox/commander.yaml"
 
-    # dashboard.md を初期化
     echo "# Dashboard - $(date '+%Y-%m-%d %H:%M')" > "${OLS_DIR}/dashboard.md"
     echo "状態: 待機中" >> "${OLS_DIR}/dashboard.md"
 
-    # CLAUDE.md がなければテンプレートからコピー
     local TEMPLATE_DIR
     TEMPLATE_DIR="$(dirname "$0")/../templates"
     if [ ! -f "${PROJECT_ROOT}/CLAUDE.md" ]; then
@@ -42,7 +40,6 @@ init_project_dir() {
         echo "[ols-start] CLAUDE.md を生成しました。プロジェクトに合わせて編集してください。"
     fi
 
-    # 役割ファイルをコピー
     mkdir -p "${OLS_DIR}/roles"
     for role_template in "${TEMPLATE_DIR}"/roles/*.md.template; do
         [ -f "$role_template" ] || continue
@@ -51,7 +48,6 @@ init_project_dir() {
         cp "$role_template" "${OLS_DIR}/roles/${role_name}.md"
     done
 
-    # config.yaml がなければデフォルト生成
     if [ ! -f "${OLS_DIR}/config.yaml" ]; then
         cat > "${OLS_DIR}/config.yaml" <<EOF
 project_name: "$(basename "$PROJECT_ROOT")"
@@ -66,73 +62,78 @@ EOF
     fi
 }
 
+# --- ペインにagent_idを設定してCLIを起動 ---
+launch_agent() {
+    local agent_id="$1"
+    local model="$2"
+    local role="$3"
+
+    local pane_index
+    pane_index=$(find_pane_by_agent_id "$agent_id" "$SESSION")
+    local target="${SESSION}:0.${pane_index}"
+
+    tmux set-option -p -t "$target" @model_name "$model"
+    local cmd
+    cmd=$(build_claude_cmd "$model" "$agent_id" "$role")
+    tmux send-keys -t "$target" "$cmd" Enter
+}
+
 # --- tmuxセッション作成 ---
-create_sessions() {
-    # 既存セッションがあれば確認
-    if tmux has-session -t ols-commander 2>/dev/null; then
+# レイアウト:
+#   ┌──────────┬──────────┬──────────┐
+#   │          │ Soldier1 │ Soldier2 │
+#   │Commander ├──────────┼──────────┤
+#   ├──────────┤ Soldier3 │ Soldier4 │
+#   │Sergeant  │          │          │
+#   └──────────┴──────────┴──────────┘
+create_session() {
+    if tmux has-session -t "$SESSION" 2>/dev/null; then
         echo "[ols-start] 既存セッションが見つかりました。停止してから再実行してください。"
         echo "  停止コマンド: ols-stop"
         exit 1
     fi
 
-    # コマンダーセッション
-    tmux new-session -d -s ols-commander -c "$PROJECT_ROOT" -x 200 -y 50
-    tmux set-option -p -t ols-commander:0.0 @agent_id "commander"
-    tmux set-option -p -t ols-commander:0.0 @model_name "opus"
-    local cmd_commander
-    cmd_commander=$(build_claude_cmd "opus" "commander" "commander")
-    tmux send-keys -t ols-commander:0.0 "$cmd_commander" Enter
+    # --- ペイン作成 ---
 
-    # チームセッション
-    tmux new-session -d -s ols-team -c "$PROJECT_ROOT" -x 200 -y 50
+    # Pane 0: Commander（全体の起点）
+    tmux new-session -d -s "$SESSION" -c "$PROJECT_ROOT" -x 200 -y 50
+    tmux set-option -p -t "${SESSION}:0.0" @agent_id "commander"
 
-    # Pane 0 = サージェント（opus）
-    tmux set-option -p -t "ols-team:0.0" @agent_id "sergeant"
-    tmux set-option -p -t "ols-team:0.0" @model_name "opus"
-    local cmd_sergeant
-    cmd_sergeant=$(build_claude_cmd "opus" "sergeant" "sergeant")
-    tmux send-keys -t "ols-team:0.0" "$cmd_sergeant" Enter
+    # 左右に分割: 左40%（指揮系統）/ 右60%（実働部隊）
+    # → Pane 1（右側全体、後でSoldier用に分割）
+    tmux split-window -t "${SESSION}:0.0" -h -p 60 -c "$PROJECT_ROOT"
 
-    # ソルジャーペインを作成（Pane 1〜N）
+    # 左ペインを上下に分割: Commander(上) / Sergeant(下)
+    # → Pane 2（Sergeant）
+    tmux split-window -t "${SESSION}:0.0" -v -p 50 -c "$PROJECT_ROOT"
+    tmux set-option -p -t "${SESSION}:0.2" @agent_id "sergeant"
+
+    # 右ペイン(1)を上下に分割: 上段 / 下段
+    # → Pane 3（右下）
+    tmux split-window -t "${SESSION}:0.1" -v -p 50 -c "$PROJECT_ROOT"
+
+    # 右上(1)を左右に分割: Soldier1 / Soldier2
+    # → Pane 4（Soldier2）
+    tmux split-window -t "${SESSION}:0.1" -h -p 50 -c "$PROJECT_ROOT"
+    tmux set-option -p -t "${SESSION}:0.1" @agent_id "soldier1"
+    tmux set-option -p -t "${SESSION}:0.4" @agent_id "soldier2"
+
+    # 右下(3)を左右に分割: Soldier3 / Soldier4
+    # → Pane 5（Soldier4）
+    tmux split-window -t "${SESSION}:0.3" -h -p 50 -c "$PROJECT_ROOT"
+    tmux set-option -p -t "${SESSION}:0.3" @agent_id "soldier3"
+    tmux set-option -p -t "${SESSION}:0.5" @agent_id "soldier4"
+
+    # Commander ペインにフォーカス
+    tmux select-pane -t "${SESSION}:0.0"
+
+    # --- Claude CLI 起動 ---
+
+    launch_agent "commander" "opus"   "commander"
+    launch_agent "sergeant"  "opus"   "sergeant"
     for i in $(seq 1 "$SOLDIER_COUNT"); do
-        tmux split-window -t ols-team -c "$PROJECT_ROOT"
+        launch_agent "soldier${i}" "sonnet" "soldier"
     done
-    tmux select-layout -t ols-team tiled
-
-    # 各ソルジャーペインにIDを設定しCLIを起動
-    for i in $(seq 1 "$SOLDIER_COUNT"); do
-        tmux set-option -p -t "ols-team:0.${i}" @agent_id "soldier${i}"
-        tmux set-option -p -t "ols-team:0.${i}" @model_name "sonnet"
-        local cmd_soldier
-        cmd_soldier=$(build_claude_cmd "sonnet" "soldier${i}" "soldier")
-        tmux send-keys -t "ols-team:0.${i}" "$cmd_soldier" Enter
-    done
-
-}
-
-# --- ターミナルUI表示 ---
-open_terminal_ui() {
-    # wezterm 環境かどうか判定
-    if [ -z "${WEZTERM_PANE:-}" ]; then
-        echo "[ols-start] 起動完了"
-        echo "  コマンダー: tmux attach -t ols-commander"
-        echo "  チーム:     tmux attach -t ols-team"
-        echo "  ソルジャー数: ${SOLDIER_COUNT}"
-        return
-    fi
-
-    # Commander タブを開く
-    local cmd_pane_id
-    cmd_pane_id=$(wezterm cli spawn --cwd "$PROJECT_ROOT" -- tmux attach -t ols-commander)
-    wezterm cli set-tab-title --pane-id "$cmd_pane_id" "Commander"
-
-    # Team タブを開く
-    local team_pane_id
-    team_pane_id=$(wezterm cli spawn --cwd "$PROJECT_ROOT" -- tmux attach -t ols-team)
-    wezterm cli set-tab-title --pane-id "$team_pane_id" "Team"
-
-    echo "[ols-start] 起動完了（wezterm タブを開きました）"
-    echo "  ソルジャー数: ${SOLDIER_COUNT}"
 }
 
 # --- inbox_watcher 起動 ---
@@ -142,25 +143,40 @@ start_watchers() {
     local PIDS_FILE="${OLS_DIR}/logs/watcher.pids"
     : > "$PIDS_FILE"
 
-    # コマンダー用 watcher
-    bash "$SCRIPTS_DIR/inbox_watcher.sh" "commander" "ols-commander:0.0" "$PROJECT_ROOT" &
-    echo $! >> "$PIDS_FILE"
-
-    # サージェント用 watcher
-    bash "$SCRIPTS_DIR/inbox_watcher.sh" "sergeant" "ols-team:0.0" "$PROJECT_ROOT" &
-    echo $! >> "$PIDS_FILE"
-
-    # 各ソルジャー用 watcher
+    local agents=("commander" "sergeant")
     for i in $(seq 1 "$SOLDIER_COUNT"); do
-        bash "$SCRIPTS_DIR/inbox_watcher.sh" "soldier${i}" "ols-team:0.${i}" "$PROJECT_ROOT" &
+        agents+=("soldier${i}")
+    done
+
+    for agent_id in "${agents[@]}"; do
+        local pane_index
+        pane_index=$(find_pane_by_agent_id "$agent_id" "$SESSION")
+        bash "$SCRIPTS_DIR/inbox_watcher.sh" "$agent_id" "${SESSION}:0.${pane_index}" "$PROJECT_ROOT" &
         echo $! >> "$PIDS_FILE"
     done
 
-    echo "[ols-start] inbox_watcher を起動しました（$(wc -l < "$PIDS_FILE" | tr -d ' ') プロセス）"
+    echo "[ols-start] inbox_watcher を起動しました（${#agents[@]} プロセス）"
+}
+
+# --- ターミナルUI表示 ---
+open_terminal_ui() {
+    if [ -z "${WEZTERM_PANE:-}" ]; then
+        echo "[ols-start] 起動完了"
+        echo "  接続: tmux attach -t ${SESSION}"
+        echo "  ソルジャー数: ${SOLDIER_COUNT}"
+        return
+    fi
+
+    local pane_id
+    pane_id=$(wezterm cli spawn --cwd "$PROJECT_ROOT" -- tmux attach -t "$SESSION")
+    wezterm cli set-tab-title --pane-id "$pane_id" "OL-Soldiers"
+
+    echo "[ols-start] 起動完了（wezterm タブを開きました）"
+    echo "  ソルジャー数: ${SOLDIER_COUNT}"
 }
 
 # --- メイン ---
 init_project_dir
-create_sessions
+create_session
 start_watchers
 open_terminal_ui
