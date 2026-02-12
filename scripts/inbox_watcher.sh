@@ -40,8 +40,10 @@ while true; do
             ;;
     esac
 
-    # tmux send-keys で通知
-    tmux send-keys -t "$TMUX_TARGET" "$NUDGE" Enter
+    # tmux send-keys で通知（-l でリテラル送信後、Enter を別送信）
+    tmux send-keys -l -t "$TMUX_TARGET" "$NUDGE"
+    sleep 0.2
+    tmux send-keys -t "$TMUX_TARGET" Enter
     log "通知送信: ${NUDGE}"
 
     # 連続イベントのデバウンス（1秒待つ）
