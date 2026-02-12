@@ -26,12 +26,21 @@ init_project_dir() {
     echo "状態: 待機中" >> "${OLS_DIR}/dashboard.md"
 
     # CLAUDE.md がなければテンプレートからコピー
+    local TEMPLATE_DIR
+    TEMPLATE_DIR="$(dirname "$0")/../templates"
     if [ ! -f "${PROJECT_ROOT}/CLAUDE.md" ]; then
-        local TEMPLATE_DIR
-        TEMPLATE_DIR="$(dirname "$0")/../templates"
         cp "${TEMPLATE_DIR}/CLAUDE.md.template" "${PROJECT_ROOT}/CLAUDE.md"
         echo "[ols-start] CLAUDE.md を生成しました。プロジェクトに合わせて編集してください。"
     fi
+
+    # 役割ファイルをコピー
+    mkdir -p "${OLS_DIR}/roles"
+    for role_template in "${TEMPLATE_DIR}"/roles/*.md.template; do
+        [ -f "$role_template" ] || continue
+        local role_name
+        role_name="$(basename "$role_template" .md.template)"
+        cp "$role_template" "${OLS_DIR}/roles/${role_name}.md"
+    done
 
     # config.yaml がなければデフォルト生成
     if [ ! -f "${OLS_DIR}/config.yaml" ]; then

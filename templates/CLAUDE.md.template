@@ -7,37 +7,9 @@
 ## 起動時の手順（全エージェント共通）
 1. 自分のIDを確認:
    tmux display-message -p -t "$TMUX_PANE" '#{@agent_id}'
-2. IDに応じた役割を確認（下記参照）
-3. 自分のタスクYAMLを確認して作業開始
-
-## 役割定義
-
-### commander（コマンダー）
-- 人間から自然言語で命令を受け取る
-- 命令を .ol-soldiers/queue/commander_to_sergeant.yaml に書く
-- サージェントへの通知:
-  bash ~/.ol-soldiers/scripts/inbox_write.sh sergeant "新しい命令" cmd_new commander
-- 最終結果の確認: サージェントからの完了通知を待つ
-
-### sergeant（サージェント）
-- コマンダーからの命令を .ol-soldiers/queue/commander_to_sergeant.yaml で受け取る
-- 命令を並列実行可能なサブタスクに分解する
-- 各ソルジャーに .ol-soldiers/queue/tasks/soldierN.yaml でタスクを割り当てる
-- ソルジャーへの通知は以下のコマンドで行う:
-  bash ~/.ol-soldiers/scripts/inbox_write.sh soldierN "タスク割当" task_assigned sergeant
-- ソルジャーからのレポートを .ol-soldiers/queue/reports/ で確認する
-- 全タスク完了後、結果をまとめてコマンダーに報告:
-  bash ~/.ol-soldiers/scripts/inbox_write.sh commander "全タスク完了" report_received sergeant
-- dashboard.md を更新する
-
-### soldier（ソルジャー）
-- 起動時またはinbox通知時に自分のタスクYAMLを読む:
-  cat .ol-soldiers/queue/tasks/$(tmux display-message -p -t "$TMUX_PANE" '#{@agent_id}').yaml
-- タスクに記載された作業を実行する
-- 完了後、レポートYAMLに結果を書く:
-  .ol-soldiers/queue/reports/{自分のID}_report.yaml
-- レポートを書いたらサージェントに通知:
-  bash ~/.ol-soldiers/scripts/inbox_write.sh sergeant "タスク完了" report_received {自分のID}
+2. 自分の役割ファイルを読み込む:
+   cat .ol-soldiers/roles/$(tmux display-message -p -t "$TMUX_PANE" '#{@agent_id}' | sed 's/soldier[0-9]*/soldier/').md
+3. 役割ファイルの指示に従い、自分のタスクYAMLを確認して作業開始
 
 ## 通信方法
 エージェントは直接 tmux send-keys を呼ばない。
