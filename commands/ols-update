@@ -1,0 +1,45 @@
+#!/bin/bash
+# commands/ols-update - プロジェクトの .ol-soldiers を最新テンプレートで更新
+# 使い方: ols-update [--claude]
+set -euo pipefail
+source "$(dirname "$0")/../lib/common.sh"
+
+PROJECT_ROOT="$(pwd)"
+OLS_DIR="${PROJECT_ROOT}/.ol-soldiers"
+TEMPLATE_DIR="$(dirname "$0")/../templates"
+UPDATE_CLAUDE=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --claude) UPDATE_CLAUDE=true ;;
+        *)
+            echo "使い方: ols-update [--claude]"
+            echo "  --claude  CLAUDE.md も最新テンプレートで上書き更新する"
+            exit 1
+            ;;
+    esac
+done
+
+if [ ! -d "$OLS_DIR" ]; then
+    echo "[ols-update] .ol-soldiers/ が見つかりません。先に ols-start を実行してください。"
+    exit 1
+fi
+
+# 1. ロールファイルを更新
+mkdir -p "${OLS_DIR}/roles"
+for role_template in "${TEMPLATE_DIR}"/roles/*.md.template; do
+    [ -f "$role_template" ] || continue
+    role_name="$(basename "$role_template" .md.template)"
+    cp "$role_template" "${OLS_DIR}/roles/${role_name}.md"
+    ols_log INFO "roles/${role_name}.md を更新"
+done
+
+# 2. CLAUDE.md の更新（--claude 指定時のみ）
+if [ "$UPDATE_CLAUDE" = true ]; then
+    cp "${TEMPLATE_DIR}/CLAUDE.md.template" "${PROJECT_ROOT}/CLAUDE.md"
+    ols_log INFO "CLAUDE.md を更新"
+    echo "[ols-update] CLAUDE.md を最新テンプレートで上書きしました。"
+    echo "  ※ プロジェクト固有情報のセクションを再編集してください。"
+fi
+
+echo "[ols-update] .ol-soldiers/roles/ を最新に更新しました。"

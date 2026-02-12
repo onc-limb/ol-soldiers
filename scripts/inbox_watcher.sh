@@ -1,10 +1,10 @@
 #!/bin/bash
 # scripts/inbox_watcher.sh - ファイル変更を監視してエージェントを起こす
-# 使い方: inbox_watcher.sh <agent_id> <tmux_target> <project_root>
+# 使い方: inbox_watcher.sh <agent_id> <wezterm_pane_id> <project_root>
 set -euo pipefail
 
 AGENT_ID="$1"
-TMUX_TARGET="$2"
+PANE_ID="$2"
 PROJECT_ROOT="$3"
 INBOX_FILE="${PROJECT_ROOT}/.ol-soldiers/queue/inbox/${AGENT_ID}.yaml"
 LOG_FILE="${PROJECT_ROOT}/.ol-soldiers/logs/watcher.log"
@@ -40,10 +40,8 @@ while true; do
             ;;
     esac
 
-    # tmux send-keys で通知（-l でリテラル送信後、Enter を別送信）
-    tmux send-keys -l -t "$TMUX_TARGET" "$NUDGE"
-    sleep 0.2
-    tmux send-keys -t "$TMUX_TARGET" Enter
+    # WezTerm CLI で通知送信（\r = Enterキー相当）
+    printf '%s\r' "$NUDGE" | wezterm cli send-text --pane-id "$PANE_ID" --no-paste
     log "通知送信: ${NUDGE}"
 
     # 連続イベントのデバウンス（1秒待つ）

@@ -14,7 +14,7 @@ check_dependency() {
     echo "[OK] $1: $(command -v "$1")"
 }
 
-check_dependency tmux     "sudo apt install tmux  /  brew install tmux"
+check_dependency wezterm  "https://wezfurlong.org/wezterm/ からインストール"
 check_dependency claude   "https://code.claude.com からインストール"
 check_dependency fswatch "brew install fswatch（Phase 2 で必要）" || true
 
@@ -41,13 +41,6 @@ if [[ ":$PATH:" != *":${INSTALL_DIR}/commands:"* ]]; then
     echo ""
     echo "  export PATH=\"\$HOME/.ol-soldiers/commands:\$PATH\""
     echo ""
-fi
-
-# 4. tmux 設定（マウス有効化）
-TMUX_CONF="$HOME/.tmux.conf"
-if ! grep -q "set -g mouse on" "$TMUX_CONF" 2>/dev/null; then
-    echo "set -g mouse on" >> "$TMUX_CONF"
-    echo "[OK] tmux マウス操作を有効化しました。"
 fi
 
 echo ""

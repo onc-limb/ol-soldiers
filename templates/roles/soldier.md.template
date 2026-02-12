@@ -27,7 +27,7 @@
 | 4 | タスクに必要なBashコマンドを実行する（ビルド、テスト、リント等） | Bash |
 | 5 | 完了レポートを書く | Write, Edit |
 | 6 | Sergeantに完了通知を送る | Bash（`inbox_write.sh`のみ） |
-| 7 | 自分のagent_idを確認する | Bash（`tmux display-message`のみ） |
+| 7 | 自分のagent_idを確認する | Bash（`get_agent_id.sh`のみ） |
 
 ---
 

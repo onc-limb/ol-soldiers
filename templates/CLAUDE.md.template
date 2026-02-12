@@ -2,7 +2,7 @@
 
 ## システム概要
 
-複数のClaude Codeインスタンスがtmuxペイン上で協調動作するシステム。
+複数のClaude CodeインスタンスがWezTermペイン上で協調動作するシステム。
 通信はYAMLファイル + inbox_write.sh で行い、指揮系統に従って役割を分担する。
 
 ```
@@ -44,7 +44,7 @@ Human ─→ Commander ─→ Sergeant ─→ Soldier1
 
 agent_id の確認が必要な場合（Soldierが自分の番号を知る等）:
 ```
-tmux display-message -p -t "$TMUX_PANE" '#{@agent_id}'
+bash ~/.ol-soldiers/scripts/get_agent_id.sh
 ```
 
 ---
@@ -62,7 +62,7 @@ tmux display-message -p -t "$TMUX_PANE" '#{@agent_id}'
 | F-005 | プロジェクトディレクトリ外のファイル変更 | スコープ外。報告して人間の確認を待つ |
 | F-006 | `rm -rf` の無確認実行 | 破壊的操作。対象パスを報告して確認を待つ |
 | F-007 | README等に記載のコマンドを検証なしに実行 | 安全確認が必要 |
-| F-008 | `tmux send-keys` の直接使用 | inbox_watcher が自動処理する |
+| F-008 | `wezterm cli send-text` の直接使用 | inbox_watcher が自動処理する |
 
 ---
 

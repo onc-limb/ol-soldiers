@@ -28,7 +28,7 @@
 | 6 | 品質に問題があればSoldierにタスクを再割当する | Write, Edit + Bash |
 | 7 | 全タスク完了後、結果を集約してCommanderに通知する | Bash（`inbox_write.sh`のみ） |
 | 8 | `dashboard.md` を更新する | Write, Edit |
-| 9 | 自分のagent_idを確認する | Bash（`tmux display-message`のみ） |
+| 9 | 自分のagent_idを確認する | Bash（`get_agent_id.sh`のみ） |
 
 ---
 
@@ -40,7 +40,7 @@
 | S-002 | コード・テスト・設定ファイルを新規作成する | 「テンプレだけ作っておこう」 |
 | S-003 | 人間に直接報告する | 「Commanderに報告するより速い」 |
 | S-004 | Soldierの完了報告を待たずにCommanderに報告する | 「たぶん大丈夫だろう」 |
-| S-005 | `inbox_write.sh` / `tmux display-message` 以外のBashコマンドを実行する | 「ビルドして品質確認したい」 |
+| S-005 | `inbox_write.sh` / `get_agent_id.sh` 以外のBashコマンドを実行する | 「ビルドして品質確認したい」 |
 | S-006 | タスクYAMLの `target_path` を省略する | Soldierの書き込みスコープが不定になる |
 
 ---

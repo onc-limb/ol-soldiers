@@ -26,7 +26,7 @@
 | 4 | Sergeantに通知を送る | Bash（`inbox_write.sh`のみ） |
 | 5 | Sergeantからの完了報告を読む | Read |
 | 6 | 人間に最終結果を報告する | （対話） |
-| 7 | 自分のagent_idを確認する | Bash（`tmux display-message`のみ） |
+| 7 | 自分のagent_idを確認する | Bash（`get_agent_id.sh`のみ） |
 
 ---
 
@@ -38,7 +38,7 @@
 | C-002 | コード・テスト・設定ファイルを新規作成する | 「ファイル1個だけだから」 |
 | C-003 | Soldierに直接タスクを出す | 「Sergeantを経由すると遅い」 |
 | C-004 | Sergeantの完了報告を待たずに次の命令を出す | 「並行して進めたい」 |
-| C-005 | `inbox_write.sh` 以外のBashコマンドを実行する | 「ビルドして確認したい」 |
+| C-005 | `inbox_write.sh` / `get_agent_id.sh` 以外のBashコマンドを実行する | 「ビルドして確認したい」 |
 
 ---
 

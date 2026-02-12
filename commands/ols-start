@@ -6,7 +6,7 @@ source "$(dirname "$0")/../lib/common.sh"
 PROJECT_ROOT="$(pwd)"
 OLS_DIR="${PROJECT_ROOT}/.ol-soldiers"
 SOLDIER_COUNT="${1:-4}"
-SESSION="ols"
+PANE_MAP_FILE="$(get_pane_map_file "$PROJECT_ROOT")"
 
 # --- ロール注入用のシステムプロンプトを生成 ---
 build_claude_cmd() {
@@ -62,56 +62,64 @@ EOF
     fi
 }
 
-# --- ペインにagent_idを設定してCLIを起動 ---
+# --- ペインにCLIを起動 ---
 launch_agent() {
     local agent_id="$1"
     local model="$2"
     local role="$3"
 
-    local pane_index
-    pane_index=$(find_pane_by_agent_id "$agent_id" "$SESSION")
-    local target="${SESSION}:0.${pane_index}"
+    local pane_id
+    pane_id=$(find_pane_by_agent_id "$agent_id" "$PANE_MAP_FILE")
 
-    tmux set-option -p -t "$target" @model_name "$model"
     local cmd
     cmd=$(build_claude_cmd "$model" "$agent_id" "$role")
-    tmux send-keys -t "$target" "$cmd" Enter
+    send_text_to_pane "$pane_id" "$cmd"
 }
 
-# --- tmuxセッション作成 ---
-# レイアウト (例: 4体=2x2, 6体=2x3):
-#   ┌──────────┬──────────┬──────┬──────┐
-#   │          │          │  S1  │  S2  │
-#   │Commander │ Sergeant ├──────┼──────┤
-#   │          │          │  S3  │  S4  │
-#   └──────────┴──────────┴──────┴──────┘
+# --- WezTermペイン作成 ---
+# Tab 1 (指揮タブ):
+#   ┌──────────────┬──────────────┐
+#   │  Commander   │  Sergeant    │
+#   └──────────────┴──────────────┘
+# Tab 2 (実行タブ):
+#   ┌──────┬──────┐
+#   │  S1  │  S2  │
+#   ├──────┼──────┤
+#   │  S3  │  S4  │
+#   └──────┴──────┘
 create_session() {
-    if tmux has-session -t "$SESSION" 2>/dev/null; then
-        echo "[ols-start] 既存セッションが見つかりました。停止してから再実行してください。"
-        echo "  停止コマンド: ols-stop"
-        exit 1
+    # セッション重複チェック: pane_mapが存在し、ペインが生きていれば既存セッションあり
+    if [ -f "$PANE_MAP_FILE" ]; then
+        local first_pane
+        first_pane=$(head -1 "$PANE_MAP_FILE" | cut -f2)
+        if wezterm cli list --format json 2>/dev/null | grep -q "\"pane_id\":${first_pane}" 2>/dev/null; then
+            echo "[ols-start] 既存セッションが見つかりました。停止してから再実行してください。"
+            echo "  停止コマンド: ols-stop"
+            exit 1
+        fi
+        rm -f "$PANE_MAP_FILE"
     fi
 
-    # --- ペイン作成（pane ID ベースで分割順序に依存しない） ---
+    # pane_mapファイルを初期化
+    : > "$PANE_MAP_FILE"
 
-    # セッション作成（初期ペイン = Commander）
-    tmux new-session -d -s "$SESSION" -c "$PROJECT_ROOT" -x 200 -y 50
-    tmux set-option -p -t "${SESSION}:0.0" @agent_id "commander"
+    # === Tab 1: Commander | Sergeant (左右50%) ===
+    local commander_pane
+    commander_pane=$(wezterm cli spawn --cwd "$PROJECT_ROOT")
+    save_pane_mapping "commander" "$commander_pane" "$PANE_MAP_FILE"
 
-    # Commander | 残り を左右に分割 (左20% / 右80%)
-    local rest_pane
-    rest_pane=$(tmux split-window -t "${SESSION}:0.0" -h -p 80 -c "$PROJECT_ROOT" -P -F '#{pane_id}')
+    local sergeant_pane
+    sergeant_pane=$(wezterm cli split-pane --pane-id "$commander_pane" --right --percent 50 --cwd "$PROJECT_ROOT")
+    save_pane_mapping "sergeant" "$sergeant_pane" "$PANE_MAP_FILE"
 
-    # 残りを Sergeant | Soldiers に左右分割 (左25% / 右75%)
-    local soldier_area
-    soldier_area=$(tmux split-window -t "$rest_pane" -h -p 75 -c "$PROJECT_ROOT" -P -F '#{pane_id}')
-    local sgt_pane="$rest_pane"
-    tmux set-option -p -t "$sgt_pane" @agent_id "sergeant"
+    # === Tab 2: Soldiers (四方分割) ===
+    local first_soldier
+    first_soldier=$(wezterm cli spawn --cwd "$PROJECT_ROOT")
 
-    # Soldier エリアを上下2段に分割
+    # 上下に分割
     local bottom_row
-    bottom_row=$(tmux split-window -t "$soldier_area" -v -p 50 -c "$PROJECT_ROOT" -P -F '#{pane_id}')
-    local top_row="$soldier_area"
+    bottom_row=$(wezterm cli split-pane --pane-id "$first_soldier" --bottom --percent 50 --cwd "$PROJECT_ROOT")
+    local top_row="$first_soldier"
 
     # 上段・下段のSoldier数を計算（奇数の場合は上段が1つ多い）
     local top_count=$(( (SOLDIER_COUNT + 1) / 2 ))
@@ -125,7 +133,7 @@ create_session() {
         local remaining=$((top_count - i))
         local pct=$(( 100 * remaining / (remaining + 1) ))
         local new_pane
-        new_pane=$(tmux split-window -t "$current_pane" -h -p "$pct" -c "$PROJECT_ROOT" -P -F '#{pane_id}')
+        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT")
         soldier_panes+=("$current_pane")
         current_pane="$new_pane"
     done
@@ -137,18 +145,18 @@ create_session() {
         local remaining=$((bottom_count - i))
         local pct=$(( 100 * remaining / (remaining + 1) ))
         local new_pane
-        new_pane=$(tmux split-window -t "$current_pane" -h -p "$pct" -c "$PROJECT_ROOT" -P -F '#{pane_id}')
+        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT")
         soldier_panes+=("$current_pane")
         current_pane="$new_pane"
     done
     soldier_panes+=("$current_pane")
 
     for i in $(seq 1 "$SOLDIER_COUNT"); do
-        tmux set-option -p -t "${soldier_panes[$((i-1))]}" @agent_id "soldier${i}"
+        save_pane_mapping "soldier${i}" "${soldier_panes[$((i-1))]}" "$PANE_MAP_FILE"
     done
 
     # Commander ペインにフォーカス
-    tmux select-pane -t "${SESSION}:0.0"
+    wezterm cli activate-pane --pane-id "$commander_pane"
 
     # --- Claude CLI 起動 ---
 
@@ -172,9 +180,9 @@ start_watchers() {
     done
 
     for agent_id in "${agents[@]}"; do
-        local pane_index
-        pane_index=$(find_pane_by_agent_id "$agent_id" "$SESSION")
-        bash "$SCRIPTS_DIR/inbox_watcher.sh" "$agent_id" "${SESSION}:0.${pane_index}" "$PROJECT_ROOT" &
+        local pane_id
+        pane_id=$(find_pane_by_agent_id "$agent_id" "$PANE_MAP_FILE")
+        bash "$SCRIPTS_DIR/inbox_watcher.sh" "$agent_id" "$pane_id" "$PROJECT_ROOT" &
         echo $! >> "$PIDS_FILE"
     done
 
@@ -183,18 +191,15 @@ start_watchers() {
 
 # --- ターミナルUI表示 ---
 open_terminal_ui() {
-    if [ -z "${WEZTERM_PANE:-}" ]; then
-        echo "[ols-start] 起動完了"
-        echo "  接続: tmux attach -t ${SESSION}"
-        echo "  ソルジャー数: ${SOLDIER_COUNT}"
-        return
-    fi
+    local commander_pane soldier1_pane
+    commander_pane=$(find_pane_by_agent_id "commander" "$PANE_MAP_FILE")
+    soldier1_pane=$(find_pane_by_agent_id "soldier1" "$PANE_MAP_FILE")
 
-    local pane_id
-    pane_id=$(wezterm cli spawn --cwd "$PROJECT_ROOT" -- tmux attach -t "$SESSION")
-    wezterm cli set-tab-title --pane-id "$pane_id" "OL-Soldiers"
+    wezterm cli set-tab-title --pane-id "$commander_pane" "OLS: Command"
+    wezterm cli set-tab-title --pane-id "$soldier1_pane" "OLS: Soldiers"
+    wezterm cli activate-pane --pane-id "$commander_pane"
 
-    echo "[ols-start] 起動完了（wezterm タブを開きました）"
+    echo "[ols-start] 起動完了"
     echo "  ソルジャー数: ${SOLDIER_COUNT}"
 }
 

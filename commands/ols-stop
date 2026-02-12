@@ -4,6 +4,7 @@ set -euo pipefail
 source "$(dirname "$0")/../lib/common.sh"
 
 OLS_DIR="$(get_ols_dir)"
+PANE_MAP_FILE="$(get_pane_map_file)"
 
 # 1. inbox_watcher プロセスを停止
 if [ -f "${OLS_DIR}/logs/watcher.pids" ]; then
@@ -13,7 +14,28 @@ if [ -f "${OLS_DIR}/logs/watcher.pids" ]; then
     rm "${OLS_DIR}/logs/watcher.pids"
 fi
 
-# 2. tmuxセッションを終了
-tmux kill-session -t ols 2>/dev/null && ols_log INFO "ols を停止"
+# 2. Claudeセッション終了 → ペイン削除 → タブ削除
+if [ -f "$PANE_MAP_FILE" ]; then
+    # 各ペインのClaudeセッションを終了（Ctrl-C → /exit）
+    while IFS=$'\t' read -r agent_id pane_id; do
+        # Ctrl-C で実行中の操作を中断
+        printf '\x03' | wezterm cli send-text --pane-id "$pane_id" --no-paste 2>/dev/null
+    done < "$PANE_MAP_FILE"
+    sleep 0.5
+
+    while IFS=$'\t' read -r agent_id pane_id; do
+        # /exit でClaude CLIを終了
+        printf '/exit\r' | wezterm cli send-text --pane-id "$pane_id" --no-paste 2>/dev/null
+        ols_log INFO "${agent_id} (pane: ${pane_id}) にexit送信"
+    done < "$PANE_MAP_FILE"
+    sleep 1
+
+    # 残っているペインを強制削除（最後のペイン削除でタブも閉じる）
+    while IFS=$'\t' read -r agent_id pane_id; do
+        wezterm cli kill-pane --pane-id "$pane_id" 2>/dev/null
+    done < "$PANE_MAP_FILE"
+
+    rm -f "$PANE_MAP_FILE"
+fi
 
 ols_log INFO "全セッションを停止しました。"
