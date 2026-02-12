@@ -1,0 +1,7 @@
+#!/bin/bash
+# commands/ols-stop
+set -euo pipefail
+
+tmux kill-session -t ols-commander 2>/dev/null || true
+tmux kill-session -t ols-team 2>/dev/null || true
+echo "[ols-stop] セッションを停止しました"

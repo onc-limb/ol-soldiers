@@ -81,12 +81,34 @@ create_sessions() {
             "claude --model sonnet --dangerously-skip-permissions" Enter
     done
 
-    echo "[ols-start] 起動完了"
-    echo "  コマンダー: tmux attach -t ols-commander"
-    echo "  チーム:     tmux attach -t ols-team"
+}
+
+# --- ターミナルUI表示 ---
+open_terminal_ui() {
+    # wezterm 環境かどうか判定
+    if [ -z "${WEZTERM_PANE:-}" ]; then
+        echo "[ols-start] 起動完了"
+        echo "  コマンダー: tmux attach -t ols-commander"
+        echo "  チーム:     tmux attach -t ols-team"
+        echo "  ソルジャー数: ${SOLDIER_COUNT}"
+        return
+    fi
+
+    # Commander タブを開く
+    local cmd_pane_id
+    cmd_pane_id=$(wezterm cli spawn --cwd "$PROJECT_ROOT" -- tmux attach -t ols-commander)
+    wezterm cli set-tab-title --pane-id "$cmd_pane_id" "Commander"
+
+    # Team タブを開く
+    local team_pane_id
+    team_pane_id=$(wezterm cli spawn --cwd "$PROJECT_ROOT" -- tmux attach -t ols-team)
+    wezterm cli set-tab-title --pane-id "$team_pane_id" "Team"
+
+    echo "[ols-start] 起動完了（wezterm タブを開きました）"
     echo "  ソルジャー数: ${SOLDIER_COUNT}"
 }
 
 # --- メイン ---
 init_project_dir
 create_sessions
+open_terminal_ui
