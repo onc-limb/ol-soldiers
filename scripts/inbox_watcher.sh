@@ -40,8 +40,10 @@ while true; do
             ;;
     esac
 
-    # WezTerm CLI で通知送信（\r = Enterキー相当）
-    printf '%s\r' "$NUDGE" | wezterm cli send-text --pane-id "$PANE_ID" --no-paste
+    # WezTerm CLI で通知送信（テキストとEnterを分離送信）
+    printf '%s' "$NUDGE" | wezterm cli send-text --pane-id "$PANE_ID" --no-paste
+    sleep 0.2
+    printf '\r' | wezterm cli send-text --pane-id "$PANE_ID" --no-paste
     log "通知送信: ${NUDGE}"
 
     # 連続イベントのデバウンス（1秒待つ）

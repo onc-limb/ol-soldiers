@@ -14,25 +14,27 @@ if [ -f "${OLS_DIR}/logs/watcher.pids" ]; then
     rm "${OLS_DIR}/logs/watcher.pids"
 fi
 
-# 2. Claudeセッション終了 → ペイン削除 → タブ削除
+# 2. Claudeセッション終了 → ペイン削除
 if [ -f "$PANE_MAP_FILE" ]; then
-    # 各ペインのClaudeセッションを終了（Ctrl-C → /exit）
+    # Step 1: Ctrl-C で実行中の操作を中断
     while IFS=$'\t' read -r agent_id pane_id; do
-        # Ctrl-C で実行中の操作を中断
         printf '\x03' | wezterm cli send-text --pane-id "$pane_id" --no-paste 2>/dev/null
     done < "$PANE_MAP_FILE"
     sleep 0.5
 
+    # Step 2: /exit でClaude CLIを終了（テキストとEnterを分離送信）
     while IFS=$'\t' read -r agent_id pane_id; do
-        # /exit でClaude CLIを終了
-        printf '/exit\r' | wezterm cli send-text --pane-id "$pane_id" --no-paste 2>/dev/null
+        printf '%s' '/exit' | wezterm cli send-text --pane-id "$pane_id" --no-paste 2>/dev/null
+        sleep 0.1
+        printf '\r' | wezterm cli send-text --pane-id "$pane_id" --no-paste 2>/dev/null
         ols_log INFO "${agent_id} (pane: ${pane_id}) にexit送信"
     done < "$PANE_MAP_FILE"
-    sleep 1
+    sleep 2
 
-    # 残っているペインを強制削除（最後のペイン削除でタブも閉じる）
+    # Step 3: 残っているペインを強制削除（タブ内の全ペインが消えるとタブも閉じる）
     while IFS=$'\t' read -r agent_id pane_id; do
-        wezterm cli kill-pane --pane-id "$pane_id" 2>/dev/null
+        wezterm cli kill-pane --pane-id "$pane_id" 2>/dev/null && \
+            ols_log INFO "${agent_id} (pane: ${pane_id}) を強制終了"
     done < "$PANE_MAP_FILE"
 
     rm -f "$PANE_MAP_FILE"

@@ -49,5 +49,8 @@ find_agent_by_pane_id() {
 send_text_to_pane() {
     local pane_id="$1"
     local text="$2"
-    printf '%s\r' "$text" | wezterm cli send-text --pane-id "$pane_id" --no-paste
+    # テキスト送信とEnter送信を分離（一括だとEnterが効かない）
+    printf '%s' "$text" | wezterm cli send-text --pane-id "$pane_id" --no-paste
+    sleep 0.2
+    printf '\r' | wezterm cli send-text --pane-id "$pane_id" --no-paste
 }
