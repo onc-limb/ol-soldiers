@@ -79,13 +79,13 @@ launch_agent() {
 }
 
 # --- tmuxセッション作成 ---
-# レイアウト:
-#   ┌──────────┬──────────┬──────────┐
-#   │          │ Soldier1 │ Soldier2 │
-#   │Commander ├──────────┼──────────┤
-#   ├──────────┤ Soldier3 │ Soldier4 │
-#   │Sergeant  │          │          │
-#   └──────────┴──────────┴──────────┘
+# レイアウト (例: 4体=2x2, 6体=2x3):
+#   ┌──────────┬──────┬──────┐
+#   │          │  S1  │  S2  │
+#   │Commander ├──────┼──────┤
+#   ├──────────┤  S3  │  S4  │
+#   │Sergeant  │      │      │
+#   └──────────┴──────┴──────┘
 create_session() {
     if tmux has-session -t "$SESSION" 2>/dev/null; then
         echo "[ols-start] 既存セッションが見つかりました。停止してから再実行してください。"
@@ -93,36 +93,59 @@ create_session() {
         exit 1
     fi
 
-    # --- ペイン作成 ---
+    # --- ペイン作成（pane ID ベースで分割順序に依存しない） ---
 
-    # Pane 0: Commander（全体の起点）
+    # セッション作成（初期ペイン = Commander）
     tmux new-session -d -s "$SESSION" -c "$PROJECT_ROOT" -x 200 -y 50
     tmux set-option -p -t "${SESSION}:0.0" @agent_id "commander"
 
-    # 左右に分割: 左40%（指揮系統）/ 右60%（実働部隊）
-    # → Pane 1（右側全体、後でSoldier用に分割）
-    tmux split-window -t "${SESSION}:0.0" -h -p 60 -c "$PROJECT_ROOT"
+    # 左右に分割: 左30%（指揮系統）/ 右70%（実働部隊）
+    local right_pane
+    right_pane=$(tmux split-window -t "${SESSION}:0.0" -h -p 70 -c "$PROJECT_ROOT" -P -F '#{pane_id}')
 
     # 左ペインを上下に分割: Commander(上) / Sergeant(下)
-    # → Pane 2（Sergeant）
-    tmux split-window -t "${SESSION}:0.0" -v -p 50 -c "$PROJECT_ROOT"
-    tmux set-option -p -t "${SESSION}:0.2" @agent_id "sergeant"
+    local sgt_pane
+    sgt_pane=$(tmux split-window -t "${SESSION}:0.0" -v -p 50 -c "$PROJECT_ROOT" -P -F '#{pane_id}')
+    tmux set-option -p -t "$sgt_pane" @agent_id "sergeant"
 
-    # 右ペイン(1)を上下に分割: 上段 / 下段
-    # → Pane 3（右下）
-    tmux split-window -t "${SESSION}:0.1" -v -p 50 -c "$PROJECT_ROOT"
+    # 右側を上下2段に分割
+    local bottom_row
+    bottom_row=$(tmux split-window -t "$right_pane" -v -p 50 -c "$PROJECT_ROOT" -P -F '#{pane_id}')
+    local top_row="$right_pane"
 
-    # 右上(1)を左右に分割: Soldier1 / Soldier2
-    # → Pane 4（Soldier2）
-    tmux split-window -t "${SESSION}:0.1" -h -p 50 -c "$PROJECT_ROOT"
-    tmux set-option -p -t "${SESSION}:0.1" @agent_id "soldier1"
-    tmux set-option -p -t "${SESSION}:0.4" @agent_id "soldier2"
+    # 上段・下段のSoldier数を計算（奇数の場合は上段が1つ多い）
+    local top_count=$(( (SOLDIER_COUNT + 1) / 2 ))
+    local bottom_count=$(( SOLDIER_COUNT / 2 ))
 
-    # 右下(3)を左右に分割: Soldier3 / Soldier4
-    # → Pane 5（Soldier4）
-    tmux split-window -t "${SESSION}:0.3" -h -p 50 -c "$PROJECT_ROOT"
-    tmux set-option -p -t "${SESSION}:0.3" @agent_id "soldier3"
-    tmux set-option -p -t "${SESSION}:0.5" @agent_id "soldier4"
+    local soldier_panes=()
+
+    # --- 上段を横に均等分割 (S1, S2, ...) ---
+    local current_pane="$top_row"
+    for i in $(seq 1 $((top_count - 1))); do
+        local remaining=$((top_count - i))
+        local pct=$(( 100 * remaining / (remaining + 1) ))
+        local new_pane
+        new_pane=$(tmux split-window -t "$current_pane" -h -p "$pct" -c "$PROJECT_ROOT" -P -F '#{pane_id}')
+        soldier_panes+=("$current_pane")
+        current_pane="$new_pane"
+    done
+    soldier_panes+=("$current_pane")
+
+    # --- 下段を横に均等分割 (S3, S4, ...) ---
+    current_pane="$bottom_row"
+    for i in $(seq 1 $((bottom_count - 1))); do
+        local remaining=$((bottom_count - i))
+        local pct=$(( 100 * remaining / (remaining + 1) ))
+        local new_pane
+        new_pane=$(tmux split-window -t "$current_pane" -h -p "$pct" -c "$PROJECT_ROOT" -P -F '#{pane_id}')
+        soldier_panes+=("$current_pane")
+        current_pane="$new_pane"
+    done
+    soldier_panes+=("$current_pane")
+
+    for i in $(seq 1 "$SOLDIER_COUNT"); do
+        tmux set-option -p -t "${soldier_panes[$((i-1))]}" @agent_id "soldier${i}"
+    done
 
     # Commander ペインにフォーカス
     tmux select-pane -t "${SESSION}:0.0"
