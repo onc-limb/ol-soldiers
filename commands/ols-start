@@ -7,6 +7,15 @@ PROJECT_ROOT="$(pwd)"
 OLS_DIR="${PROJECT_ROOT}/.ol-soldiers"
 SOLDIER_COUNT="${1:-2}"   # 引数でソルジャー数を指定（デフォルト2）
 
+# --- ロール注入用のシステムプロンプトを生成 ---
+build_claude_cmd() {
+    local model="$1"
+    local agent_id="$2"
+    local role="$3"
+    local prompt="あなたは ol-soldiers マルチエージェントシステムの「${role}」である（agent_id: ${agent_id}）。起動したらまず .ol-soldiers/roles/${role}.md を読め。他の行動はすべてその後に行え。役割ファイルの許可リストにない行動はすべて禁止である。"
+    echo "claude --model ${model} --dangerously-skip-permissions --append-system-prompt \"${prompt}\""
+}
+
 # --- .ol-soldiers ディレクトリの初期化 ---
 init_project_dir() {
     mkdir -p "${OLS_DIR}"/{queue/{tasks,reports,inbox},logs}
@@ -70,8 +79,9 @@ create_sessions() {
     tmux new-session -d -s ols-commander -c "$PROJECT_ROOT" -x 200 -y 50
     tmux set-option -p -t ols-commander:0.0 @agent_id "commander"
     tmux set-option -p -t ols-commander:0.0 @model_name "opus"
-    tmux send-keys -t ols-commander:0.0 \
-        "claude --model opus --dangerously-skip-permissions" Enter
+    local cmd_commander
+    cmd_commander=$(build_claude_cmd "opus" "commander" "commander")
+    tmux send-keys -t ols-commander:0.0 "$cmd_commander" Enter
 
     # チームセッション
     tmux new-session -d -s ols-team -c "$PROJECT_ROOT" -x 200 -y 50
@@ -79,8 +89,9 @@ create_sessions() {
     # Pane 0 = サージェント（opus）
     tmux set-option -p -t "ols-team:0.0" @agent_id "sergeant"
     tmux set-option -p -t "ols-team:0.0" @model_name "opus"
-    tmux send-keys -t "ols-team:0.0" \
-        "claude --model opus --dangerously-skip-permissions" Enter
+    local cmd_sergeant
+    cmd_sergeant=$(build_claude_cmd "opus" "sergeant" "sergeant")
+    tmux send-keys -t "ols-team:0.0" "$cmd_sergeant" Enter
 
     # ソルジャーペインを作成（Pane 1〜N）
     for i in $(seq 1 "$SOLDIER_COUNT"); do
@@ -92,8 +103,9 @@ create_sessions() {
     for i in $(seq 1 "$SOLDIER_COUNT"); do
         tmux set-option -p -t "ols-team:0.${i}" @agent_id "soldier${i}"
         tmux set-option -p -t "ols-team:0.${i}" @model_name "sonnet"
-        tmux send-keys -t "ols-team:0.${i}" \
-            "claude --model sonnet --dangerously-skip-permissions" Enter
+        local cmd_soldier
+        cmd_soldier=$(build_claude_cmd "sonnet" "soldier${i}" "soldier")
+        tmux send-keys -t "ols-team:0.${i}" "$cmd_soldier" Enter
     done
 
 }
