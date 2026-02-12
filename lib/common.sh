@@ -25,8 +25,8 @@ resolve_pane_target() {
         sergeant)  echo "ols-team:0.0" ;;
         soldier*)
             local num="${agent_id#soldier}"
-            # Phase 1 ではサージェントがいないので num-1
-            echo "ols-team:0.$((num - 1))"
+            # サージェントが Pane 0 を使うため、ソルジャーは Pane num
+            echo "ols-team:0.${num}"
             ;;
     esac
 }

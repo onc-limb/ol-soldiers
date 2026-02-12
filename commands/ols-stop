@@ -1,7 +1,20 @@
 #!/bin/bash
-# commands/ols-stop
+# commands/ols-stop - 全セッション停止
 set -euo pipefail
+source "$(dirname "$0")/../lib/common.sh"
 
-tmux kill-session -t ols-commander 2>/dev/null || true
-tmux kill-session -t ols-team 2>/dev/null || true
-echo "[ols-stop] セッションを停止しました"
+OLS_DIR="$(get_ols_dir)"
+
+# 1. inbox_watcher プロセスを停止
+if [ -f "${OLS_DIR}/logs/watcher.pids" ]; then
+    while read -r pid; do
+        kill "$pid" 2>/dev/null && ols_log INFO "watcher (PID: ${pid}) を停止"
+    done < "${OLS_DIR}/logs/watcher.pids"
+    rm "${OLS_DIR}/logs/watcher.pids"
+fi
+
+# 2. tmuxセッションを終了
+tmux kill-session -t ols-commander 2>/dev/null && ols_log INFO "ols-commander を停止"
+tmux kill-session -t ols-team 2>/dev/null && ols_log INFO "ols-team を停止"
+
+ols_log INFO "全セッションを停止しました。"

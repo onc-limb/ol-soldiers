@@ -14,22 +14,47 @@
 
 ### commander（コマンダー）
 - 人間から自然言語で命令を受け取る
-- 命令をタスクに分解し .ol-soldiers/queue/tasks/soldierN.yaml に書く
-- ソルジャーへの通知: tmux send-keys -t ols-team:0.{pane} "..." Enter
-- レポートの確認: cat .ol-soldiers/queue/reports/soldierN_report.yaml
+- 命令を .ol-soldiers/queue/commander_to_sergeant.yaml に書く
+- サージェントへの通知:
+  bash ~/.ol-soldiers/scripts/inbox_write.sh sergeant "新しい命令" cmd_new commander
+- 最終結果の確認: サージェントからの完了通知を待つ
+
+### sergeant（サージェント）
+- コマンダーからの命令を .ol-soldiers/queue/commander_to_sergeant.yaml で受け取る
+- 命令を並列実行可能なサブタスクに分解する
+- 各ソルジャーに .ol-soldiers/queue/tasks/soldierN.yaml でタスクを割り当てる
+- ソルジャーへの通知は以下のコマンドで行う:
+  bash ~/.ol-soldiers/scripts/inbox_write.sh soldierN "タスク割当" task_assigned sergeant
+- ソルジャーからのレポートを .ol-soldiers/queue/reports/ で確認する
+- 全タスク完了後、結果をまとめてコマンダーに報告:
+  bash ~/.ol-soldiers/scripts/inbox_write.sh commander "全タスク完了" report_received sergeant
+- dashboard.md を更新する
 
 ### soldier（ソルジャー）
-- 起動時またはコマンダーからの通知時に自分のタスクYAMLを読む:
+- 起動時またはinbox通知時に自分のタスクYAMLを読む:
   cat .ol-soldiers/queue/tasks/$(tmux display-message -p -t "$TMUX_PANE" '#{@agent_id}').yaml
 - タスクに記載された作業を実行する
 - 完了後、レポートYAMLに結果を書く:
   .ol-soldiers/queue/reports/{自分のID}_report.yaml
-- レポートを書いたらそれ以上何もしない（待機）
+- レポートを書いたらサージェントに通知:
+  bash ~/.ol-soldiers/scripts/inbox_write.sh sergeant "タスク完了" report_received {自分のID}
+
+## 通信方法
+エージェントは直接 tmux send-keys を呼ばない。
+通信は必ず inbox_write.sh 経由で行う:
+  bash ~/.ol-soldiers/scripts/inbox_write.sh <宛先> "<メッセージ>" <種別> <送信元>
+
+種別一覧:
+- cmd_new: コマンダー → サージェントへの新命令
+- task_assigned: サージェント → ソルジャーへのタスク割当
+- report_received: レポート到着通知
+- general: その他
 
 ## 通信ルール
-- 下への命令: YAMLファイル書き込み + tmux send-keys で通知
-- 上への報告: YAMLファイル書き込みのみ（send-keys 禁止）
+- 下への命令: YAMLファイル書き込み + inbox_write.sh で通知
+- 上への報告: YAMLファイル書き込み + inbox_write.sh で通知
 - 横の通信: 禁止（ソルジャー同士は直接やり取りしない）
+- tmux send-keys の直接使用は禁止（inbox_watcher が自動で行う）
 
 ## /clear 後の復帰手順
 1. このCLAUDE.mdは自動で再読み込みされる

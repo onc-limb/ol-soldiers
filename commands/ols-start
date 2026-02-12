@@ -19,6 +19,7 @@ init_project_dir() {
         touch "${OLS_DIR}/queue/inbox/soldier${i}.yaml"
     done
     touch "${OLS_DIR}/queue/inbox/sergeant.yaml"
+    touch "${OLS_DIR}/queue/inbox/commander.yaml"
 
     # dashboard.md を初期化
     echo "# Dashboard - $(date '+%Y-%m-%d %H:%M')" > "${OLS_DIR}/dashboard.md"
@@ -66,18 +67,23 @@ create_sessions() {
     # チームセッション
     tmux new-session -d -s ols-team -c "$PROJECT_ROOT" -x 200 -y 50
 
-    # ソルジャーペインを作成
-    for i in $(seq 2 "$SOLDIER_COUNT"); do
+    # Pane 0 = サージェント（opus）
+    tmux set-option -p -t "ols-team:0.0" @agent_id "sergeant"
+    tmux set-option -p -t "ols-team:0.0" @model_name "opus"
+    tmux send-keys -t "ols-team:0.0" \
+        "claude --model opus --dangerously-skip-permissions" Enter
+
+    # ソルジャーペインを作成（Pane 1〜N）
+    for i in $(seq 1 "$SOLDIER_COUNT"); do
         tmux split-window -t ols-team -c "$PROJECT_ROOT"
     done
     tmux select-layout -t ols-team tiled
 
-    # 各ペインにIDを設定しCLIを起動
+    # 各ソルジャーペインにIDを設定しCLIを起動
     for i in $(seq 1 "$SOLDIER_COUNT"); do
-        local pane_index=$((i - 1))
-        tmux set-option -p -t "ols-team:0.${pane_index}" @agent_id "soldier${i}"
-        tmux set-option -p -t "ols-team:0.${pane_index}" @model_name "sonnet"
-        tmux send-keys -t "ols-team:0.${pane_index}" \
+        tmux set-option -p -t "ols-team:0.${i}" @agent_id "soldier${i}"
+        tmux set-option -p -t "ols-team:0.${i}" @model_name "sonnet"
+        tmux send-keys -t "ols-team:0.${i}" \
             "claude --model sonnet --dangerously-skip-permissions" Enter
     done
 
@@ -108,7 +114,32 @@ open_terminal_ui() {
     echo "  ソルジャー数: ${SOLDIER_COUNT}"
 }
 
+# --- inbox_watcher 起動 ---
+start_watchers() {
+    local SCRIPTS_DIR
+    SCRIPTS_DIR="$(dirname "$0")/../scripts"
+    local PIDS_FILE="${OLS_DIR}/logs/watcher.pids"
+    : > "$PIDS_FILE"
+
+    # コマンダー用 watcher
+    bash "$SCRIPTS_DIR/inbox_watcher.sh" "commander" "ols-commander:0.0" "$PROJECT_ROOT" &
+    echo $! >> "$PIDS_FILE"
+
+    # サージェント用 watcher
+    bash "$SCRIPTS_DIR/inbox_watcher.sh" "sergeant" "ols-team:0.0" "$PROJECT_ROOT" &
+    echo $! >> "$PIDS_FILE"
+
+    # 各ソルジャー用 watcher
+    for i in $(seq 1 "$SOLDIER_COUNT"); do
+        bash "$SCRIPTS_DIR/inbox_watcher.sh" "soldier${i}" "ols-team:0.${i}" "$PROJECT_ROOT" &
+        echo $! >> "$PIDS_FILE"
+    done
+
+    echo "[ols-start] inbox_watcher を起動しました（$(wc -l < "$PIDS_FILE" | tr -d ' ') プロセス）"
+}
+
 # --- メイン ---
 init_project_dir
 create_sessions
+start_watchers
 open_terminal_ui
