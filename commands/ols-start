@@ -56,7 +56,7 @@ soldier_count: ${SOLDIER_COUNT}
 models:
   commander: "opus"
   sergeant: "opus"
-  soldiers_default: "sonnet"
+  soldiers_default: "opus"
 language: "ja"
 EOF
     fi
@@ -163,7 +163,7 @@ create_session() {
     launch_agent "commander" "opus"   "commander"
     launch_agent "sergeant"  "opus"   "sergeant"
     for i in $(seq 1 "$SOLDIER_COUNT"); do
-        launch_agent "soldier${i}" "sonnet" "soldier"
+        launch_agent "soldier${i}" "opus" "soldier"
     done
 }
 
