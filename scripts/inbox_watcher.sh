@@ -47,6 +47,7 @@ ts_to_epoch() {
 }
 
 # 応答チェック: エージェントが通知に反応したかを判定
+# NOTIFICATION_EPOCH 以降に出力ファイルが更新されていれば「応答あり」と判定
 check_response() {
     case "$AGENT_ID" in
         soldier*)
@@ -56,17 +57,26 @@ check_response() {
             status=$(grep "^status:" "$task_file" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"' || true)
             [ "$status" != "assigned" ] && return 0
             ;;
-        *)
-            # commander/sergeant: inbox の最終 timestamp と現在時刻の差で判定
-            local last_ts
-            last_ts=$(grep "timestamp:" "$INBOX_FILE" | tail -1 | awk '{print $2}' | tr -d '"' || true)
-            if [ -n "$last_ts" ]; then
-                local last_epoch current_epoch diff
-                last_epoch=$(ts_to_epoch "$last_ts")
-                current_epoch=$(date "+%s")
-                diff=$((current_epoch - last_epoch))
-                # 25秒以内に inbox 更新あり → 応答あり
-                [ "$diff" -lt 25 ] && return 0
+        sergeant)
+            # sergeant: tasks/*.yaml または dashboard.md が通知後に更新されたか
+            local file_mtime
+            for f in "${PROJECT_ROOT}/.ol-soldiers/queue/tasks"/*.yaml "${PROJECT_ROOT}/.ol-soldiers/dashboard.md"; do
+                [ -f "$f" ] || continue
+                file_mtime=$(stat -f %m "$f" 2>/dev/null || echo "0")
+                if [ "$file_mtime" -gt "$NOTIFICATION_EPOCH" ]; then
+                    return 0
+                fi
+            done
+            ;;
+        commander)
+            # commander: commander_to_sergeant.yaml が通知後に更新されたか
+            local cmd_file="${PROJECT_ROOT}/.ol-soldiers/queue/commander_to_sergeant.yaml"
+            if [ -f "$cmd_file" ]; then
+                local file_mtime
+                file_mtime=$(stat -f %m "$cmd_file" 2>/dev/null || echo "0")
+                if [ "$file_mtime" -gt "$NOTIFICATION_EPOCH" ]; then
+                    return 0
+                fi
             fi
             ;;
     esac
@@ -77,8 +87,18 @@ check_response() {
 run_escalation() {
     local nudge_msg="$1"
 
-    # Phase A: 30秒後に再ナッジ
-    sleep 30
+    # Commander/Sergeant は分析に時間がかかるためタイムアウトを延長
+    local phase_a_wait=30
+    local phase_b_wait=30
+    case "$AGENT_ID" in
+        commander|sergeant)
+            phase_a_wait=90
+            phase_b_wait=60
+            ;;
+    esac
+
+    # Phase A: 待機後に再ナッジ
+    sleep "$phase_a_wait"
     if check_response; then
         log "エスカレーション不要: 応答あり"
         return 0
@@ -88,8 +108,8 @@ run_escalation() {
     sleep 0.2
     printf '\r' | wezterm cli send-text --pane-id "$PANE_ID" --no-paste
 
-    # Phase B: さらに30秒後に Escape + 再ナッジ
-    sleep 30
+    # Phase B: さらに待機後に Escape + 再ナッジ
+    sleep "$phase_b_wait"
     if check_response; then
         log "エスカレーション不要: Phase B 前に応答あり"
         return 0
@@ -112,6 +132,7 @@ run_escalation() {
 }
 
 ESCALATION_PID=""
+NOTIFICATION_EPOCH=0
 
 touch "$INBOX_FILE"
 log "監視開始: ${INBOX_FILE} (fswatch + stat fallback, timeout: ${FSWATCH_TIMEOUT}s)"
@@ -148,13 +169,21 @@ while true; do
     # 連続イベントのデバウンス（1秒待つ）
     sleep 1
 
-    # 前回のエスカレーションプロセスがあれば終了
-    if [ -n "$ESCALATION_PID" ] && kill -0 "$ESCALATION_PID" 2>/dev/null; then
-        kill "$ESCALATION_PID" 2>/dev/null || true
-        wait "$ESCALATION_PID" 2>/dev/null || true
-    fi
-
-    # バックグラウンドでエスカレーション判定を開始
-    run_escalation "$NUDGE" &
-    ESCALATION_PID=$!
+    case "$LATEST_TYPE" in
+        task_assigned|cmd_new)
+            # アクション必須の種別: フルエスカレーション（Phase A→B→C）
+            if [ -n "$ESCALATION_PID" ] && kill -0 "$ESCALATION_PID" 2>/dev/null; then
+                kill "$ESCALATION_PID" 2>/dev/null || true
+                wait "$ESCALATION_PID" 2>/dev/null || true
+            fi
+            NOTIFICATION_EPOCH=$(date "+%s")
+            run_escalation "$NUDGE" &
+            ESCALATION_PID=$!
+            log "エスカレーション開始 (種別: ${LATEST_TYPE})"
+            ;;
+        *)
+            # 情報通知の種別 (report_received, general 等): nudge のみ、エスカレーションなし
+            log "エスカレーション不要 (種別: ${LATEST_TYPE}, nudge のみ)"
+            ;;
+    esac
 done
