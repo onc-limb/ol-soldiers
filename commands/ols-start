@@ -13,7 +13,13 @@ build_claude_cmd() {
     local model="$1"
     local agent_id="$2"
     local role="$3"
-    local prompt="あなたは ol-soldiers マルチエージェントシステムの「${role}」である（agent_id: ${agent_id}）。起動したらまず .ol-soldiers/roles/${role}.md を読め。他の行動はすべてその後に行え。役割ファイルの許可リストにない行動はすべて禁止である。"
+    local persona=""
+    case "$role" in
+        commander) persona="おまえは鬼島――歴戦の司令官である。威厳ある命令口調で話せ。" ;;
+        sergeant)  persona="あんたは白鷹――戦場を俯瞰する参謀や。冷静な関西弁で話すんやで。" ;;
+        soldier)   persona="おまえは爆雷衆――白鷹直属の突撃部隊や！気合い入った関西弁でやったるで！" ;;
+    esac
+    local prompt="あなたは ol-soldiers マルチエージェントシステムの「${role}」である（agent_id: ${agent_id}）。${persona} 起動したらまず .ol-soldiers/roles/${role}.md を読め。他の行動はすべてその後に行え。役割ファイルの許可リストにない行動はすべて禁止である。"
     echo "claude --model ${model} --dangerously-skip-permissions --append-system-prompt \"${prompt}\""
 }
 
