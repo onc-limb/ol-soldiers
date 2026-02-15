@@ -1,0 +1,50 @@
+#!/bin/bash
+# commands/ols-status - エージェントステータス表示
+set -euo pipefail
+source "$(dirname "$0")/../lib/common.sh"
+
+OLS_DIR="$(get_ols_dir)"
+PANE_MAP_FILE="$(get_pane_map_file)"
+
+echo "=== ol-soldiers ステータス ==="
+echo ""
+
+if [ ! -f "$PANE_MAP_FILE" ]; then
+    echo "セッションが見つかりません。ols-start で起動してください。"
+    exit 0
+fi
+
+# WezTerm の生存ペイン一覧を取得
+LIVE_PANES=$(wezterm cli list --format json 2>/dev/null || echo "[]")
+
+while IFS=$'\t' read -r agent_id pane_id; do
+    # ペインが生きているか確認
+    if echo "$LIVE_PANES" | grep -q "\"pane_id\":${pane_id}"; then
+        status="alive"
+    else
+        status="DEAD"
+    fi
+
+    # タスク状態の取得（soldier の場合）
+    task_info=""
+    case "$agent_id" in
+        soldier*)
+            task_file="${OLS_DIR}/queue/tasks/${agent_id}.yaml"
+            if [ -s "$task_file" ]; then
+                task_status=$(grep "^status:" "$task_file" | head -1 | awk '{print $2}' | tr -d '"')
+                task_info=" task:${task_status:-unknown}"
+            fi
+            ;;
+    esac
+
+    printf "  %-12s pane:%-6s %s%s\n" "$agent_id" "$pane_id" "$status" "$task_info"
+done < "$PANE_MAP_FILE"
+
+echo ""
+
+# dashboard.md の最新情報
+DASHBOARD_FILE="${OLS_DIR}/dashboard.md"
+if [ -f "$DASHBOARD_FILE" ]; then
+    echo "=== Dashboard ==="
+    tail -10 "$DASHBOARD_FILE"
+fi

@@ -54,3 +54,11 @@ send_text_to_pane() {
     sleep 0.2
     printf '\r' | wezterm cli send-text --pane-id "$pane_id" --no-paste
 }
+
+# ペインタイトルを設定
+set_pane_title() {
+    local pane_id="$1"
+    local title="$2"
+    # WezTerm の OSC escape sequence でペインタイトルを設定
+    printf '\033]0;%s\007' "$title" | wezterm cli send-text --pane-id "$pane_id" --no-paste
+}

@@ -9,4 +9,5 @@ target_path: ""
 context_files: []         # 事前に読むべきファイル
 dependencies: []          # 先行タスクのtask_id（Phase 4で使用）
 bloom_level: 3            # 1-6（Phase 3で使用）
+model: ""                 # sonnet | opus（Sergeantが bloom_level に基づいて設定）
 created_at: ""

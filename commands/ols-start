@@ -25,6 +25,16 @@ build_claude_cmd() {
 
 # --- .ol-soldiers ディレクトリの初期化 ---
 init_project_dir() {
+    # .gitignore に .ol-soldiers/ を追加
+    local gitignore_file="${PROJECT_ROOT}/.gitignore"
+    if [ -f "$gitignore_file" ]; then
+        if ! grep -q "^\.ol-soldiers/$" "$gitignore_file"; then
+            echo ".ol-soldiers/" >> "$gitignore_file"
+        fi
+    else
+        echo ".ol-soldiers/" > "$gitignore_file"
+    fi
+
     mkdir -p "${OLS_DIR}"/{queue/{tasks,reports,inbox},logs}
 
     touch "${OLS_DIR}/queue/commander_to_sergeant.yaml"
@@ -166,10 +176,27 @@ create_session() {
 
     # --- Claude CLI 起動 ---
 
-    launch_agent "commander" "opus"   "commander"
-    launch_agent "sergeant"  "opus"   "sergeant"
+    local commander_model sergeant_model soldiers_model
+    commander_model=$(grep "commander:" "${OLS_DIR}/config.yaml" | tail -1 | awk '{print $2}' | tr -d '"')
+    sergeant_model=$(grep "sergeant:" "${OLS_DIR}/config.yaml" | tail -1 | awk '{print $2}' | tr -d '"')
+    soldiers_model=$(grep "soldiers_default:" "${OLS_DIR}/config.yaml" | awk '{print $2}' | tr -d '"')
+    commander_model="${commander_model:-opus}"
+    sergeant_model="${sergeant_model:-opus}"
+    soldiers_model="${soldiers_model:-opus}"
+
+    launch_agent "commander" "$commander_model" "commander"
+    launch_agent "sergeant"  "$sergeant_model"  "sergeant"
     for i in $(seq 1 "$SOLDIER_COUNT"); do
-        launch_agent "soldier${i}" "opus" "soldier"
+        launch_agent "soldier${i}" "$soldiers_model" "soldier"
+    done
+
+    # --- ペインタイトル設定 ---
+    set_pane_title "$commander_pane" "commander ($commander_model)"
+    set_pane_title "$sergeant_pane" "sergeant ($sergeant_model)"
+    for i in $(seq 1 "$SOLDIER_COUNT"); do
+        local pane_id
+        pane_id=$(find_pane_by_agent_id "soldier${i}" "$PANE_MAP_FILE")
+        set_pane_title "$pane_id" "soldier${i} ($soldiers_model)"
     done
 }
 
