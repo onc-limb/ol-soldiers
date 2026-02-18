@@ -5,7 +5,7 @@ source "$(dirname "$0")/../lib/common.sh"
 
 PROJECT_ROOT="$(pwd)"
 OLS_DIR="${PROJECT_ROOT}/.ol-soldiers"
-SOLDIER_COUNT="${1:-4}"
+SOLDIER_COUNT="${1:-8}"
 PANE_MAP_FILE="$(get_pane_map_file "$PROJECT_ROOT")"
 
 # --- ロール注入用のシステムプロンプトを生成 ---
@@ -64,6 +64,12 @@ init_project_dir() {
         cp "$role_template" "${OLS_DIR}/roles/${role_name}.md"
     done
 
+    mkdir -p "${OLS_DIR}/specialties"
+    for specialty_file in "${TEMPLATE_DIR}"/specialties/*.md; do
+        [ -f "$specialty_file" ] || continue
+        cp "$specialty_file" "${OLS_DIR}/specialties/"
+    done
+
     if [ ! -f "${OLS_DIR}/config.yaml" ]; then
         cat > "${OLS_DIR}/config.yaml" <<EOF
 project_name: "$(basename "$PROJECT_ROOT")"
@@ -92,16 +98,74 @@ launch_agent() {
     send_text_to_pane "$pane_id" "$cmd"
 }
 
+# --- ヘルパー: N人分のSoldierペインを1タブに配置（2xN/2 グリッド） ---
+create_soldier_tab() {
+    local start_num="$1"
+    local end_num="$2"
+    local count=$((end_num - start_num + 1))
+
+    local first_pane
+    first_pane=$(wezterm cli spawn --cwd "$PROJECT_ROOT")
+
+    # 上下2段に分割
+    local bottom_row
+    bottom_row=$(wezterm cli split-pane --pane-id "$first_pane" --bottom --percent 50 --cwd "$PROJECT_ROOT")
+    local top_row="$first_pane"
+
+    local top_count=$(( (count + 1) / 2 ))
+    local bottom_count=$(( count / 2 ))
+    local tab_panes=()
+
+    # 上段を横に均等分割
+    local current_pane="$top_row"
+    for i in $(seq 1 $((top_count - 1))); do
+        local remaining=$((top_count - i))
+        local pct=$(( 100 * remaining / (remaining + 1) ))
+        local new_pane
+        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT")
+        tab_panes+=("$current_pane")
+        current_pane="$new_pane"
+    done
+    tab_panes+=("$current_pane")
+
+    # 下段を横に均等分割
+    current_pane="$bottom_row"
+    for i in $(seq 1 $((bottom_count - 1))); do
+        local remaining=$((bottom_count - i))
+        local pct=$(( 100 * remaining / (remaining + 1) ))
+        local new_pane
+        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT")
+        tab_panes+=("$current_pane")
+        current_pane="$new_pane"
+    done
+    tab_panes+=("$current_pane")
+
+    # pane_map に登録
+    local idx=0
+    for num in $(seq "$start_num" "$end_num"); do
+        save_pane_mapping "soldier${num}" "${tab_panes[$idx]}" "$PANE_MAP_FILE"
+        idx=$((idx + 1))
+    done
+
+    echo "$first_pane"
+}
+
 # --- WezTermペイン作成 ---
 # Tab 1 (指揮タブ):
 #   ┌──────────────┬──────────────┐
 #   │  Commander   │  Sergeant    │
 #   └──────────────┴──────────────┘
-# Tab 2 (実行タブ):
+# Tab 2 (Soldiers 1-4):
 #   ┌──────┬──────┐
 #   │  S1  │  S2  │
 #   ├──────┼──────┤
 #   │  S3  │  S4  │
+#   └──────┴──────┘
+# Tab 3 (Soldiers 5-8, 5人以上の場合):
+#   ┌──────┬──────┐
+#   │  S5  │  S6  │
+#   ├──────┼──────┤
+#   │  S7  │  S8  │
 #   └──────┴──────┘
 create_session() {
     # セッション重複チェック: pane_mapが存在し、ペインが生きていれば既存セッションあり
@@ -128,48 +192,15 @@ create_session() {
     sergeant_pane=$(wezterm cli split-pane --pane-id "$commander_pane" --right --percent 50 --cwd "$PROJECT_ROOT")
     save_pane_mapping "sergeant" "$sergeant_pane" "$PANE_MAP_FILE"
 
-    # === Tab 2: Soldiers (四方分割) ===
-    local first_soldier
-    first_soldier=$(wezterm cli spawn --cwd "$PROJECT_ROOT")
+    # === Tab 2: Soldiers 1-4 (または全Soldierが4以下の場合は全員) ===
+    local half=$((SOLDIER_COUNT > 4 ? 4 : SOLDIER_COUNT))
+    local tab2_first
+    tab2_first=$(create_soldier_tab 1 "$half")
 
-    # 上下に分割
-    local bottom_row
-    bottom_row=$(wezterm cli split-pane --pane-id "$first_soldier" --bottom --percent 50 --cwd "$PROJECT_ROOT")
-    local top_row="$first_soldier"
-
-    # 上段・下段のSoldier数を計算（奇数の場合は上段が1つ多い）
-    local top_count=$(( (SOLDIER_COUNT + 1) / 2 ))
-    local bottom_count=$(( SOLDIER_COUNT / 2 ))
-
-    local soldier_panes=()
-
-    # --- 上段を横に均等分割 (S1, S2, ...) ---
-    local current_pane="$top_row"
-    for i in $(seq 1 $((top_count - 1))); do
-        local remaining=$((top_count - i))
-        local pct=$(( 100 * remaining / (remaining + 1) ))
-        local new_pane
-        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT")
-        soldier_panes+=("$current_pane")
-        current_pane="$new_pane"
-    done
-    soldier_panes+=("$current_pane")
-
-    # --- 下段を横に均等分割 (S3, S4, ...) ---
-    current_pane="$bottom_row"
-    for i in $(seq 1 $((bottom_count - 1))); do
-        local remaining=$((bottom_count - i))
-        local pct=$(( 100 * remaining / (remaining + 1) ))
-        local new_pane
-        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT")
-        soldier_panes+=("$current_pane")
-        current_pane="$new_pane"
-    done
-    soldier_panes+=("$current_pane")
-
-    for i in $(seq 1 "$SOLDIER_COUNT"); do
-        save_pane_mapping "soldier${i}" "${soldier_panes[$((i-1))]}" "$PANE_MAP_FILE"
-    done
+    # === Tab 3: Soldiers 5-8 (5人以上の場合のみ) ===
+    if [ "$SOLDIER_COUNT" -gt 4 ]; then
+        create_soldier_tab $((half + 1)) "$SOLDIER_COUNT" > /dev/null
+    fi
 
     # Commander ペインにフォーカス
     wezterm cli activate-pane --pane-id "$commander_pane"
@@ -228,7 +259,12 @@ open_terminal_ui() {
     soldier1_pane=$(find_pane_by_agent_id "soldier1" "$PANE_MAP_FILE")
 
     wezterm cli set-tab-title --pane-id "$commander_pane" "OLS: Command"
-    wezterm cli set-tab-title --pane-id "$soldier1_pane" "OLS: Soldiers"
+    wezterm cli set-tab-title --pane-id "$soldier1_pane" "OLS: Soldiers 1-4"
+    if [ "$SOLDIER_COUNT" -gt 4 ]; then
+        local soldier5_pane
+        soldier5_pane=$(find_pane_by_agent_id "soldier5" "$PANE_MAP_FILE")
+        wezterm cli set-tab-title --pane-id "$soldier5_pane" "OLS: Soldiers 5-8"
+    fi
     wezterm cli activate-pane --pane-id "$commander_pane"
 
     echo "[ols-start] 起動完了"

@@ -2,6 +2,7 @@
 task_id: ""
 command_id: ""
 assigned_to: ""
+specialty: ""                # designer | architect | marketer | engineer（Sergeantがタスクに応じて設定）
 status: "assigned"        # assigned → in_progress → completed/failed/blocked
 description: ""
 acceptance_criteria: []

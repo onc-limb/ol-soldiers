@@ -32,7 +32,9 @@ while IFS=$'\t' read -r agent_id pane_id; do
             task_file="${OLS_DIR}/queue/tasks/${agent_id}.yaml"
             if [ -s "$task_file" ]; then
                 task_status=$(grep "^status:" "$task_file" | head -1 | awk '{print $2}' | tr -d '"')
+                specialty=$(grep "^specialty:" "$task_file" | head -1 | awk '{print $2}' | tr -d '"')
                 task_info=" task:${task_status:-unknown}"
+                [ -n "$specialty" ] && task_info="${task_info} [${specialty}]"
             fi
             ;;
     esac

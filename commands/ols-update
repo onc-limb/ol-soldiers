@@ -34,6 +34,14 @@ for role_template in "${TEMPLATE_DIR}"/roles/*.md.template; do
     ols_log INFO "roles/${role_name}.md を更新"
 done
 
+# 1.5 専門性ドキュメントを更新
+mkdir -p "${OLS_DIR}/specialties"
+for specialty_file in "${TEMPLATE_DIR}"/specialties/*.md; do
+    [ -f "$specialty_file" ] || continue
+    cp "$specialty_file" "${OLS_DIR}/specialties/"
+    ols_log INFO "specialties/$(basename "$specialty_file") を更新"
+done
+
 # 2. CLAUDE.md の更新（--claude 指定時のみ）
 if [ "$UPDATE_CLAUDE" = true ]; then
     cp "${TEMPLATE_DIR}/CLAUDE.md.template" "${PROJECT_ROOT}/CLAUDE.md"

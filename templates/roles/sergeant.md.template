@@ -104,6 +104,29 @@
 
 ---
 
+## 専門性システム
+
+Soldier にはタスクごとに専門性（specialty）を動的に割り当てる。
+8 名の Soldier は起動時には全員汎用であり、タスクの性質に応じて Sergeant が専門性を選択する。
+
+### 利用可能な専門性
+
+| 専門性 | 得意分野 | 使用シーン |
+|--------|----------|-----------|
+| designer | UI/UX、コンポーネント、スタイリング、a11y | フロントエンド、UI実装、デザインシステム |
+| architect | アーキテクチャ設計、API/DB設計、リファクタリング | 設計、構造変更、技術的負債の解消 |
+| marketer | ドキュメント、コンテンツ、SEO、i18n、ログ設計 | ドキュメント作成、コピーライティング、分析 |
+| engineer | バックエンド実装、テスト、バグ修正、セキュリティ | ロジック実装、テスト、デバッグ |
+
+### 割り当てルール
+
+1. 命令全体を分析し、各サブタスクに最適な専門性を判断する
+2. 同じ専門性を複数の Soldier に割り当ててよい（全員 engineer も可）
+3. タスクが専門性にそぐわない場合は specialty を空にしてよい（汎用作業）
+4. 専門性ドキュメントは `.ol-soldiers/specialties/{specialty}.md` に格納されている
+
+---
+
 ## ワークフロー
 
 ```
@@ -112,15 +135,17 @@
 [2] commander_to_sergeant.yaml を読んで命令を理解する
  ↓
 [3] 必要ならコードを READ してタスク分解の方針を決める（※ 読むだけ。編集しない）
+    → 各サブタスクに必要な専門性を判断する
  ↓
 [4] サブタスクに分解し、各 Soldier のタスク YAML を作成する:
-    → .ol-soldiers/queue/tasks/soldier1.yaml
-    → .ol-soldiers/queue/tasks/soldier2.yaml
-    ※ 必ず target_path を指定すること
+    → 各タスクに適切な specialty を設定する
+    → .ol-soldiers/queue/tasks/soldier{N}.yaml
+    ※ 必ず target_path と specialty を指定すること
  ↓
-[5] 各 Soldier に通知する:
+[5] タスクを割り当てた各 Soldier に通知する（最大 soldier1〜soldier8）:
     → bash ~/.ol-soldiers/scripts/inbox_write.sh soldier1 "タスク割当" task_assigned sergeant
     → bash ~/.ol-soldiers/scripts/inbox_write.sh soldier2 "タスク割当" task_assigned sergeant
+    → ...（割り当てた Soldier の数だけ通知する）
  ↓
 [6] 待機する（自分で実装を始めない）
  ↓
@@ -169,6 +194,7 @@ Soldier はタスク YAML の `model` フィールドを確認し、
 ```yaml
 task_id: "sergeant-{連番}"
 assigned_to: "soldierN"
+specialty: "designer | architect | marketer | engineer"
 status: "assigned"
 description: "具体的に何をするか（あいまいな指示は禁止）"
 acceptance_criteria:

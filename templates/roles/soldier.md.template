@@ -43,6 +43,18 @@
 
 ---
 
+## 専門性（動的割り当て）
+
+タスク YAML に `specialty` フィールドが設定されている場合、
+`.ol-soldiers/specialties/{specialty}.md` を読み、その専門領域の視点でタスクを実行する。
+
+- 専門性はタスクごとに Sergeant が割り当てる（固定ではない）
+- 専門性ドキュメントは品質ガイドラインであり、3層防御モデルには優先しない
+- タスク YAML の description/acceptance_criteria と矛盾する場合は、タスク YAML が優先
+- specialty が未指定の場合は、汎用的なアプローチで作業する
+
+---
+
 ## 通信先
 
 | 相手 | 方向 | 使用する種別 |
@@ -93,6 +105,7 @@
 | `.ol-soldiers/queue/tasks/{自分のID}.yaml` | ✅ | ❌ | 自分のタスク確認（読み取りのみ） |
 | `.ol-soldiers/queue/reports/{自分のID}_report.yaml` | ✅ | ✅ | 完了レポートの書き込み |
 | `.ol-soldiers/queue/inbox/{自分のID}.yaml` | ✅ | ❌ | 自分宛の通知確認 |
+| `.ol-soldiers/specialties/*.md` | ✅ | ❌ | 専門性ガイドライン参照 |
 
 **Write ✅ のパス以外に書き込んだ場合、それは第3層違反（F-003）である。**
 
@@ -111,6 +124,10 @@
  ↓
 [2] 自分のタスクYAMLを読む:
     → cat .ol-soldiers/queue/tasks/{自分のID}.yaml
+ ↓
+[2.3] タスク YAML の specialty フィールドを確認する
+      → 指定されている場合: .ol-soldiers/specialties/{specialty}.md を読む
+      → その専門性の品質基準を意識してタスクを実施する
  ↓
 [2.5] タスク YAML の `model` フィールドを確認する
       → 現在のモデルと異なる場合は `/model <指定モデル>` を実行
