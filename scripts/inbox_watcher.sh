@@ -147,16 +147,16 @@ while true; do
 
     case "$LATEST_TYPE" in
         task_assigned)
-            NUDGE="タスクYAMLが割り当てられました。cat .ol-soldiers/queue/tasks/${AGENT_ID}.yaml を読んで作業を開始してください。"
+            NUDGE=".ol-soldiers/queue/tasks/${AGENT_ID}.yaml を読んで作業開始"
             ;;
         cmd_new)
-            NUDGE="新しい命令が到着しました。cat .ol-soldiers/queue/commander_to_sergeant.yaml を読んで対応してください。"
+            NUDGE=".ol-soldiers/queue/commander_to_sergeant.yaml を読んで対応"
             ;;
         report_received)
-            NUDGE="レポートが届きました。.ol-soldiers/queue/reports/ を確認してください。"
+            NUDGE=".ol-soldiers/queue/reports/ を確認"
             ;;
         *)
-            NUDGE="新しいメッセージが inbox にあります。cat .ol-soldiers/queue/inbox/${AGENT_ID}.yaml で確認してください。"
+            NUDGE=".ol-soldiers/queue/inbox/${AGENT_ID}.yaml を確認"
             ;;
     esac
 

@@ -25,7 +25,7 @@ printf '\r' | wezterm cli send-text --pane-id "$PANE_ID" --no-paste
 sleep 3
 
 # 3. 復帰指示を送信
-RECOVERY_MSG="あなたは ${AGENT_ID} です。/clear でコンテキストがリセットされました。.ol-soldiers/roles/ 配下の自分のロールファイルを読み、タスクYAMLを確認して作業を再開してください。"
+RECOVERY_MSG="${AGENT_ID} です。/clear 後の復帰: .ol-soldiers/roles/ の自分のロールファイルを読み、タスクYAMLを確認して再開。"
 printf '%s' "$RECOVERY_MSG" | wezterm cli send-text --pane-id "$PANE_ID" --no-paste
 sleep 0.2
 printf '\r' | wezterm cli send-text --pane-id "$PANE_ID" --no-paste
