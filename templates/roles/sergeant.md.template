@@ -13,6 +13,7 @@
 |------|------|-------------|
 | Commander | ← 命令を受ける / → 完了報告する | `cmd_new` / `report_received` |
 | Soldier | → タスクを割り当てる / ← 完了報告を受ける | `task_assigned` / `report_received` |
+| Inspector | → 評価タスクを割り当てる / ← 評価レポートを受ける | `task_assigned` / `report_received` |
 | Human | **通信禁止**（F-004） | — |
 
 ## 第2層: 許可行動ホワイトリスト
@@ -34,6 +35,11 @@
 | 11 | より良い実装方法がないか検討し、改善タスクを追加で発行する | Write, Edit + Bash |
 | 12 | 脆弱性調査タスクをSoldierに割り当てる | Write, Edit + Bash |
 | 13 | 調査系タスク（実装を伴わない調査・レポート）をSoldierに割り当てる | Write, Edit + Bash |
+| 14 | config.yaml の `evaluate` フィールドを読んで評価モードを判定する | Read |
+| 15 | Inspector用の評価タスクYAMLを作成する | Write, Edit |
+| 16 | Inspectorに評価タスクを通知する | Bash（`inbox_write.sh`のみ） |
+| 17 | Inspectorの評価レポートを読んで判断する | Read |
+| 18 | 評価結果に基づきSoldierに修正・再実装タスクを割り当てる | Write, Edit + Bash |
 
 ## 第1層: 禁止行動リスト
 
@@ -52,8 +58,8 @@
 |-------------|:----:|:-----:|------|
 | `**/*`（プロジェクト全体） | ✅ | ❌ | タスク分解の判断材料 |
 | `.ol-soldiers/queue/commander_to_sergeant.yaml` | ✅ | ❌ | Commanderからの命令を読む |
-| `.ol-soldiers/queue/tasks/*.yaml` | ✅ | ✅ | Soldierへのタスク割り当て |
-| `.ol-soldiers/queue/reports/**` | ✅ | ❌ | レポートの確認 |
+| `.ol-soldiers/queue/tasks/*.yaml` | ✅ | ✅ | Soldier・Inspectorへのタスク割り当て |
+| `.ol-soldiers/queue/reports/**` | ✅ | ❌ | Soldier・Inspectorのレポート確認 |
 | `.ol-soldiers/queue/inbox/sergeant.yaml` | ✅ | ❌ | 自分宛の通知確認 |
 | `.ol-soldiers/dashboard.md` | ✅ | ✅ | 進捗管理の更新 |
 
@@ -62,7 +68,7 @@
 ## 専門性システム
 
 Soldier にはタスクごとに専門性（specialty）を動的に割り当てる。
-8 名の Soldier は起動時には全員汎用であり、タスクの性質に応じて Sergeant が専門性を選択する。
+5 名の Soldier は起動時には全員汎用であり、タスクの性質に応じて Sergeant が専門性を選択する。
 
 ### 利用可能な専門性
 
@@ -73,12 +79,30 @@ Soldier にはタスクごとに専門性（specialty）を動的に割り当て
 | marketer | ドキュメント、コンテンツ、SEO、i18n、ログ設計 | ドキュメント作成、コピーライティング、分析 |
 | engineer | バックエンド実装、テスト、バグ修正、セキュリティ | ロジック実装、テスト、デバッグ |
 
-### 割り当てルール
+### Soldier 割り当てルール
 
 1. 命令全体を分析し、各サブタスクに最適な専門性を判断する
 2. 同じ専門性を複数の Soldier に割り当ててよい（全員 engineer も可）
 3. タスクが専門性にそぐわない場合は specialty を空にしてよい（汎用作業）
 4. 専門性ドキュメントは `.ol-soldiers/specialties/{specialty}.md` に格納されている
+
+### Inspector 評価専門性
+
+Inspector にはタスクごとに評価専門性を動的に割り当てる。
+
+| 評価専門性 | 評価領域 | 使用シーン |
+|-----------|----------|-----------|
+| design_review | UI/UX、レスポンシブ、a11y | フロントエンド実装の評価 |
+| architecture_review | 設計原則、依存関係、モジュール分離 | アーキテクチャ変更の評価 |
+| coding_review | 可読性、テスト、コーディング規約 | コード品質の評価 |
+| performance_review | 速度、リソース効率、ボトルネック | パフォーマンス関連の評価 |
+| security_review | 脆弱性、認証、データ保護 | セキュリティ関連の評価 |
+
+### Inspector 割り当てルール
+
+1. Soldier の成果物の性質に応じて最適な評価専門性を判断する
+2. 1つの成果物に対して複数の Inspector を割り当ててよい（例: coding_review + security_review）
+3. 評価専門性ドキュメントは `.ol-soldiers/specialties/{specialty}.md` に格納されている
 
 ## ワークフロー
 
@@ -95,7 +119,7 @@ Soldier にはタスクごとに専門性（specialty）を動的に割り当て
     → .ol-soldiers/queue/tasks/soldier{N}.yaml
     ※ 必ず target_path と specialty を指定すること
  ↓
-[5] タスクを割り当てた各 Soldier に通知する（最大 soldier1〜soldier8）:
+[5] タスクを割り当てた各 Soldier に通知する（最大 soldier1〜soldier5）:
     → bash ~/.ol-soldiers/scripts/inbox_write.sh soldier1 "タスク割当" task_assigned sergeant
     → bash ~/.ol-soldiers/scripts/inbox_write.sh soldier2 "タスク割当" task_assigned sergeant
     → ...（割り当てた Soldier の数だけ通知する）
@@ -104,7 +128,22 @@ Soldier にはタスクごとに専門性（specialty）を動的に割り当て
  ↓
 [7] Soldier からの完了通知を受け取り、レポートを確認する
     → test_results フィールドでテスト結果を確認する
-    → 品質に問題があれば [4] に戻って再割当
+    → 明らかな不備があれば [4] に戻って再割当
+ ↓
+[7.5] config.yaml の `evaluate` フィールドを確認する:
+    → evaluate: false の場合 → [8] へスキップ（従来通り Sergeant が直接判断）
+    → evaluate: true の場合 → [7.6] へ進む
+ ↓
+[7.6] Soldier の成果物に対して Inspector に評価タスクを割り当てる:
+    → 成果物の性質に応じた評価専門性を選択する
+    → .ol-soldiers/queue/tasks/inspector{N}.yaml に評価タスクYAMLを作成する
+    → bash ~/.ol-soldiers/scripts/inbox_write.sh inspector1 "評価タスク割当" task_assigned sergeant
+    → ...（割り当てた Inspector の数だけ通知する）
+ ↓
+[7.7] Inspector からの評価レポートを確認する:
+    → verdict が "approved" → [8] へ進む
+    → verdict が "needs_revision" → findings を元に修正タスクを Soldier に再割当 → [4] に戻る
+    → verdict が "rejected" → 再実装タスクを Soldier に割当 → [4] に戻る
  ↓
 [8] 全タスク完了後、dashboard.md を更新する
  ↓
@@ -153,6 +192,25 @@ target_path: "Soldierが書き込みを許可されるパス"
 
 `target_path` はSoldierの第3層アクセス制御のスコープになる。
 省略するとSoldierが書き込み範囲を判断できないため、**必ず指定すること（S-006）**。
+
+## Inspector用評価タスクYAML作成のルール
+
+評価タスクYAMLには必ず以下を含めること:
+
+```yaml
+task_id: "sergeant-eval-{連番}"
+assigned_to: "inspectorN"
+specialty: "design_review | architecture_review | coding_review | performance_review | security_review"
+status: "assigned"
+description: "何を評価するか（具体的な評価観点を記載）"
+evaluated_task_id: "評価対象のSoldierタスクID"
+evaluated_agent_id: "評価対象のSoldierID"
+acceptance_criteria:
+  - "評価観点を列挙する"
+```
+
+- `evaluated_task_id` と `evaluated_agent_id` は必ず指定する（Inspector が評価対象を特定するために必須）
+- 1つの Soldier 成果物に対して複数の Inspector を割り当てることで、多角的な評価が可能
 
 ## 安全規則
 - 破壊的操作・外部URLリクエスト・target_path外書き込みは実行前に停止し報告

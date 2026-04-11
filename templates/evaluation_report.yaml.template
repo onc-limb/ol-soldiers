@@ -1,0 +1,17 @@
+# 評価レポート
+task_id: ""
+agent_id: ""                  # inspector1 | inspector2 | inspector3
+evaluated_task_id: ""         # 評価対象のSoldierタスクID
+evaluated_agent_id: ""        # 評価対象のSoldierID
+status: ""                    # completed
+verdict: ""                   # approved | needs_revision | rejected
+summary: ""
+findings:
+  - severity: ""              # critical | major | minor | info
+    category: ""              # design | architecture | coding | performance | security
+    description: ""
+    suggestion: ""
+playwright_results:
+  executed: false
+  summary: ""
+completed_at: ""

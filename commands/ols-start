@@ -5,8 +5,29 @@ source "$(dirname "$0")/../lib/common.sh"
 
 PROJECT_ROOT="$(pwd)"
 OLS_DIR="${PROJECT_ROOT}/.ol-soldiers"
-SOLDIER_COUNT="${1:-8}"
 PANE_MAP_FILE="$(get_pane_map_file "$PROJECT_ROOT")"
+
+# --- 引数パース ---
+SOLDIER_COUNT=5
+INSPECTOR_COUNT=3
+NO_EVALUATE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --no-evaluate)
+            NO_EVALUATE=true
+            shift
+            ;;
+        [0-9]*)
+            SOLDIER_COUNT="$1"
+            shift
+            ;;
+        *)
+            echo "[ols-start] 不明なオプション: $1" >&2
+            exit 1
+            ;;
+    esac
+done
 
 # --- ロール注入用のシステムプロンプトを生成 ---
 build_claude_cmd() {
@@ -18,6 +39,7 @@ build_claude_cmd() {
         commander) persona="" ;;
         sergeant)  persona="" ;;
         soldier)   persona="" ;;
+        inspector) persona="" ;;
     esac
     local prompt="あなたは ol-soldiers の ${role}（agent_id: ${agent_id}）。起動時に .ol-soldiers/roles/${role}.md を読め。許可リスト外の行動は禁止。"
     echo "claude --model ${model} --dangerously-skip-permissions --append-system-prompt \"${prompt}\""
@@ -43,6 +65,13 @@ init_project_dir() {
         touch "${OLS_DIR}/queue/reports/soldier${i}_report.yaml"
         touch "${OLS_DIR}/queue/inbox/soldier${i}.yaml"
     done
+    if [ "$NO_EVALUATE" = false ]; then
+        for i in $(seq 1 "$INSPECTOR_COUNT"); do
+            touch "${OLS_DIR}/queue/tasks/inspector${i}.yaml"
+            touch "${OLS_DIR}/queue/reports/inspector${i}_report.yaml"
+            touch "${OLS_DIR}/queue/inbox/inspector${i}.yaml"
+        done
+    fi
     touch "${OLS_DIR}/queue/inbox/sergeant.yaml"
     touch "${OLS_DIR}/queue/inbox/commander.yaml"
 
@@ -70,18 +99,23 @@ init_project_dir() {
         cp "$specialty_file" "${OLS_DIR}/specialties/"
     done
 
-    if [ ! -f "${OLS_DIR}/config.yaml" ]; then
-        cat > "${OLS_DIR}/config.yaml" <<EOF
+    local evaluate_flag="true"
+    if [ "$NO_EVALUATE" = true ]; then
+        evaluate_flag="false"
+    fi
+    cat > "${OLS_DIR}/config.yaml" <<EOF
 project_name: "$(basename "$PROJECT_ROOT")"
 project_root: "${PROJECT_ROOT}"
 soldier_count: ${SOLDIER_COUNT}
+inspector_count: ${INSPECTOR_COUNT}
+evaluate: ${evaluate_flag}
 models:
   commander: "opus"
   sergeant: "opus"
   soldiers_default: "opus"
+  inspectors_default: "opus"
 language: "ja"
 EOF
-    fi
 }
 
 # --- ペインにCLIを起動 ---
@@ -98,10 +132,13 @@ launch_agent() {
     send_text_to_pane "$pane_id" "$cmd"
 }
 
-# --- ヘルパー: N人分のSoldierペインを1タブに配置（2xN/2 グリッド） ---
-create_soldier_tab() {
+# --- ヘルパー: N人分のエージェントペインを1タブに配置（2xN/2 グリッド） ---
+# 引数: start_num end_num [prefix]
+# prefix: "soldier"（デフォルト）または "inspector"
+create_agent_tab() {
     local start_num="$1"
     local end_num="$2"
+    local prefix="${3:-soldier}"
     local count=$((end_num - start_num + 1))
 
     local first_pane
@@ -143,7 +180,7 @@ create_soldier_tab() {
     # pane_map に登録
     local idx=0
     for num in $(seq "$start_num" "$end_num"); do
-        save_pane_mapping "soldier${num}" "${tab_panes[$idx]}" "$PANE_MAP_FILE"
+        save_pane_mapping "${prefix}${num}" "${tab_panes[$idx]}" "$PANE_MAP_FILE"
         idx=$((idx + 1))
     done
 
@@ -155,18 +192,18 @@ create_soldier_tab() {
 #   ┌──────────────┬──────────────┐
 #   │  Commander   │  Sergeant    │
 #   └──────────────┴──────────────┘
-# Tab 2 (Soldiers 1-4):
+# Tab 2 (Soldiers):
+#   ┌──────┬──────┬──────┐
+#   │  S1  │  S2  │  S3  │
+#   ├──────┼──────┴──────┤
+#   │  S4  │     S5      │
+#   └──────┴─────────────┘
+# Tab 3 (Inspectors, --no-evaluate でない場合):
 #   ┌──────┬──────┐
-#   │  S1  │  S2  │
-#   ├──────┼──────┤
-#   │  S3  │  S4  │
-#   └──────┴──────┘
-# Tab 3 (Soldiers 5-8, 5人以上の場合):
-#   ┌──────┬──────┐
-#   │  S5  │  S6  │
-#   ├──────┼──────┤
-#   │  S7  │  S8  │
-#   └──────┴──────┘
+#   │  I1  │  I2  │
+#   ├──────┴──────┤
+#   │     I3      │
+#   └─────────────┘
 create_session() {
     # セッション重複チェック: pane_mapが存在し、ペインが生きていれば既存セッションあり
     if [ -f "$PANE_MAP_FILE" ]; then
@@ -192,26 +229,27 @@ create_session() {
     sergeant_pane=$(wezterm cli split-pane --pane-id "$commander_pane" --right --percent 50 --cwd "$PROJECT_ROOT")
     save_pane_mapping "sergeant" "$sergeant_pane" "$PANE_MAP_FILE"
 
-    # === Tab 2: Soldiers 1-4 (または全Soldierが4以下の場合は全員) ===
-    local half=$((SOLDIER_COUNT > 4 ? 4 : SOLDIER_COUNT))
+    # === Tab 2: Soldiers ===
     local tab2_first
-    tab2_first=$(create_soldier_tab 1 "$half")
+    tab2_first=$(create_agent_tab 1 "$SOLDIER_COUNT" "soldier")
 
-    # === Tab 3: Soldiers 5-8 (5人以上の場合のみ) ===
-    if [ "$SOLDIER_COUNT" -gt 4 ]; then
-        create_soldier_tab $((half + 1)) "$SOLDIER_COUNT" > /dev/null
+    # === Tab 3: Inspectors (--no-evaluate でない場合のみ) ===
+    if [ "$NO_EVALUATE" = false ]; then
+        create_agent_tab 1 "$INSPECTOR_COUNT" "inspector" > /dev/null
     fi
 
     # Commander ペインにフォーカス
     wezterm cli activate-pane --pane-id "$commander_pane"
 
-    local commander_model sergeant_model soldiers_model
+    local commander_model sergeant_model soldiers_model inspectors_model
     commander_model=$(grep "commander:" "${OLS_DIR}/config.yaml" | tail -1 | awk '{print $2}' | tr -d '"')
     sergeant_model=$(grep "sergeant:" "${OLS_DIR}/config.yaml" | tail -1 | awk '{print $2}' | tr -d '"')
     soldiers_model=$(grep "soldiers_default:" "${OLS_DIR}/config.yaml" | awk '{print $2}' | tr -d '"')
+    inspectors_model=$(grep "inspectors_default:" "${OLS_DIR}/config.yaml" | awk '{print $2}' | tr -d '"')
     commander_model="${commander_model:-opus}"
     sergeant_model="${sergeant_model:-opus}"
     soldiers_model="${soldiers_model:-opus}"
+    inspectors_model="${inspectors_model:-opus}"
 
     # --- ペインタイトル設定 ---
     set_pane_title "$commander_pane" "commander ($commander_model)"
@@ -221,6 +259,13 @@ create_session() {
         pane_id=$(find_pane_by_agent_id "soldier${i}" "$PANE_MAP_FILE")
         set_pane_title "$pane_id" "soldier${i} ($soldiers_model)"
     done
+    if [ "$NO_EVALUATE" = false ]; then
+        for i in $(seq 1 "$INSPECTOR_COUNT"); do
+            local pane_id
+            pane_id=$(find_pane_by_agent_id "inspector${i}" "$PANE_MAP_FILE")
+            set_pane_title "$pane_id" "inspector${i} ($inspectors_model)"
+        done
+    fi
 
     # --- Claude CLI 起動 ---
     launch_agent "commander" "$commander_model" "commander"
@@ -228,6 +273,11 @@ create_session() {
     for i in $(seq 1 "$SOLDIER_COUNT"); do
         launch_agent "soldier${i}" "$soldiers_model" "soldier"
     done
+    if [ "$NO_EVALUATE" = false ]; then
+        for i in $(seq 1 "$INSPECTOR_COUNT"); do
+            launch_agent "inspector${i}" "$inspectors_model" "inspector"
+        done
+    fi
 }
 
 # --- inbox_watcher 起動 ---
@@ -241,6 +291,11 @@ start_watchers() {
     for i in $(seq 1 "$SOLDIER_COUNT"); do
         agents+=("soldier${i}")
     done
+    if [ "$NO_EVALUATE" = false ]; then
+        for i in $(seq 1 "$INSPECTOR_COUNT"); do
+            agents+=("inspector${i}")
+        done
+    fi
 
     for agent_id in "${agents[@]}"; do
         local pane_id
@@ -259,16 +314,22 @@ open_terminal_ui() {
     soldier1_pane=$(find_pane_by_agent_id "soldier1" "$PANE_MAP_FILE")
 
     wezterm cli set-tab-title --pane-id "$commander_pane" "OLS: Command"
-    wezterm cli set-tab-title --pane-id "$soldier1_pane" "OLS: Soldiers 1-4"
-    if [ "$SOLDIER_COUNT" -gt 4 ]; then
-        local soldier5_pane
-        soldier5_pane=$(find_pane_by_agent_id "soldier5" "$PANE_MAP_FILE")
-        wezterm cli set-tab-title --pane-id "$soldier5_pane" "OLS: Soldiers 5-8"
+    wezterm cli set-tab-title --pane-id "$soldier1_pane" "OLS: Soldiers 1-${SOLDIER_COUNT}"
+    if [ "$NO_EVALUATE" = false ]; then
+        local inspector1_pane
+        inspector1_pane=$(find_pane_by_agent_id "inspector1" "$PANE_MAP_FILE")
+        wezterm cli set-tab-title --pane-id "$inspector1_pane" "OLS: Inspectors 1-${INSPECTOR_COUNT}"
     fi
     wezterm cli activate-pane --pane-id "$commander_pane"
 
     echo "[ols-start] 起動完了"
     echo "  ソルジャー数: ${SOLDIER_COUNT}"
+    if [ "$NO_EVALUATE" = false ]; then
+        echo "  インスペクター数: ${INSPECTOR_COUNT}"
+        echo "  評価モード: ON"
+    else
+        echo "  評価モード: OFF (--no-evaluate)"
+    fi
 }
 
 # --- メイン ---

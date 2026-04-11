@@ -1,0 +1,14 @@
+# 評価タスク割り当て
+task_id: ""
+command_id: ""
+assigned_to: ""               # inspector1 | inspector2 | inspector3
+specialty: ""                 # design_review | architecture_review | coding_review | performance_review | security_review
+status: "assigned"            # assigned → in_progress → completed
+description: ""
+evaluated_task_id: ""         # 評価対象のSoldierタスクID
+evaluated_agent_id: ""        # 評価対象のSoldierID
+acceptance_criteria: []
+context_files: []             # 事前に読むべきファイル
+bloom_level: 5                # 評価は通常 Bloom Level 5（評価）
+model: ""                     # sonnet | opus
+created_at: ""

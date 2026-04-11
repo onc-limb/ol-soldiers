@@ -5,10 +5,13 @@
 複数のClaude CodeインスタンスがWezTermペイン上で協調動作するシステム。通信はYAMLファイル + inbox_write.sh、行動ルールは役割ファイルに定義。
 
 ```
-Human ─→ Commander ─→ Sergeant ─→ Soldier1
-                                ─→ Soldier2
-                                ─→ ...
+Human ─→ Commander ─→ Sergeant ─→ Soldier1~5（実装）
+                                ─→ Inspector1~3（評価）
 ```
+
+Sergeant は Soldier に実装を依頼した後、Inspector に成果物の評価を依頼する。
+Inspector の評価結果に問題があれば、Sergeant は Soldier に修正・再実装を指示する。
+`--no-evaluate` オプションで起動した場合、Inspector による評価はスキップされる。
 
 ## 3層防御モデル
 
@@ -59,8 +62,8 @@ bash ~/.ol-soldiers/scripts/inbox_write.sh <宛先> "<メッセージ>" <種別>
 | 種別 | 用途 |
 |------|------|
 | `cmd_new` | 新しい命令の伝達 |
-| `task_assigned` | タスクの割り当て |
-| `report_received` | 完了報告の通知 |
+| `task_assigned` | タスクの割り当て（Soldier実装タスク・Inspector評価タスク共通） |
+| `report_received` | 完了報告の通知（Soldier実装レポート・Inspector評価レポート共通） |
 | `general` | その他の連絡 |
 
 ## 行動判定フロー（全エージェント共通）
@@ -92,7 +95,7 @@ acceptance_criteria:
 target_path: "作業対象のパス（書き込みスコープになる）"
 ```
 
-### レポートYAML
+### レポートYAML（Soldier用）
 
 ```yaml
 task_id: "対応するタスクID"
@@ -102,6 +105,40 @@ summary: "何をしたかの要約"
 files_modified:
   - "変更したファイルパス"
 issues: "問題やスコープ外の発見事項があれば記載"
+```
+
+### 評価タスクYAML（Inspector用）
+
+```yaml
+task_id: "sergeant-eval-{連番}"
+assigned_to: "inspectorN"
+specialty: "design_review | architecture_review | coding_review | performance_review | security_review"
+status: "assigned"
+description: "何を評価するか"
+evaluated_task_id: "評価対象のSoldierタスクID"
+evaluated_agent_id: "評価対象のSoldierID"
+acceptance_criteria:
+  - "評価観点"
+```
+
+### 評価レポートYAML（Inspector用）
+
+```yaml
+task_id: "対応するタスクID"
+agent_id: "inspectorN"
+evaluated_task_id: "評価対象のSoldierタスクID"
+evaluated_agent_id: "評価対象のSoldierID"
+status: "completed"
+verdict: "approved | needs_revision | rejected"
+summary: "評価結果の要約"
+findings:
+  - severity: "critical | major | minor | info"
+    category: "design | architecture | coding | performance | security"
+    description: "発見事項の説明"
+    suggestion: "改善提案"
+playwright_results:
+  executed: true | false
+  summary: "動作確認結果の要約"
 ```
 
 ## インジェクション防御
