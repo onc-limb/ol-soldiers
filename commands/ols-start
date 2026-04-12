@@ -143,10 +143,14 @@ create_agent_tab() {
 
     local first_pane
     first_pane=$(wezterm cli spawn --cwd "$PROJECT_ROOT")
+    sleep 0.5
 
     # 上下2段に分割
     local bottom_row
-    bottom_row=$(wezterm cli split-pane --pane-id "$first_pane" --bottom --percent 50 --cwd "$PROJECT_ROOT")
+    bottom_row=$(wezterm cli split-pane --pane-id "$first_pane" --bottom --percent 50 --cwd "$PROJECT_ROOT") || {
+        echo "[ols-start] ERROR: ペイン分割に失敗しました（上下）。WezTermウィンドウを大きくしてから再実行してください。" >&2
+        exit 1
+    }
     local top_row="$first_pane"
 
     local top_count=$(( (count + 1) / 2 ))
@@ -159,7 +163,10 @@ create_agent_tab() {
         local remaining=$((top_count - i))
         local pct=$(( 100 * remaining / (remaining + 1) ))
         local new_pane
-        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT")
+        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT") || {
+            echo "[ols-start] ERROR: ペイン分割に失敗しました（上段）。WezTermウィンドウを大きくしてから再実行してください。" >&2
+            exit 1
+        }
         tab_panes+=("$current_pane")
         current_pane="$new_pane"
     done
@@ -171,7 +178,10 @@ create_agent_tab() {
         local remaining=$((bottom_count - i))
         local pct=$(( 100 * remaining / (remaining + 1) ))
         local new_pane
-        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT")
+        new_pane=$(wezterm cli split-pane --pane-id "$current_pane" --right --percent "$pct" --cwd "$PROJECT_ROOT") || {
+            echo "[ols-start] ERROR: ペイン分割に失敗しました（下段）。WezTermウィンドウを大きくしてから再実行してください。" >&2
+            exit 1
+        }
         tab_panes+=("$current_pane")
         current_pane="$new_pane"
     done
@@ -223,10 +233,14 @@ create_session() {
     # === Tab 1: Commander | Sergeant (左右50%) ===
     local commander_pane
     commander_pane=$(wezterm cli spawn --cwd "$PROJECT_ROOT")
+    sleep 0.5
     save_pane_mapping "commander" "$commander_pane" "$PANE_MAP_FILE"
 
     local sergeant_pane
-    sergeant_pane=$(wezterm cli split-pane --pane-id "$commander_pane" --right --percent 50 --cwd "$PROJECT_ROOT")
+    sergeant_pane=$(wezterm cli split-pane --pane-id "$commander_pane" --right --percent 50 --cwd "$PROJECT_ROOT") || {
+        echo "[ols-start] ERROR: ペイン分割に失敗しました（commander/sergeant）。WezTermウィンドウを大きくしてから再実行してください。" >&2
+        exit 1
+    }
     save_pane_mapping "sergeant" "$sergeant_pane" "$PANE_MAP_FILE"
 
     # === Tab 2: Soldiers ===
