@@ -8,7 +8,7 @@ OLS_DIR="${PROJECT_ROOT}/.ol-soldiers"
 PANE_MAP_FILE="$(get_pane_map_file "$PROJECT_ROOT")"
 
 # --- 引数パース ---
-SOLDIER_COUNT=5
+SOLDIER_COUNT=4
 INSPECTOR_COUNT=3
 NO_EVALUATE=false
 
@@ -151,15 +151,25 @@ create_agent_tab() {
         echo "[ols-start] ERROR: ペイン分割に失敗しました（上下）。WezTermウィンドウを大きくしてから再実行してください。" >&2
         exit 1
     }
+    sleep 0.3
     local top_row="$first_pane"
 
     local top_count=$(( (count + 1) / 2 ))
     local bottom_count=$(( count / 2 ))
+    # bottom_count=1のとき、上段のみ右分割するとWezTermが意図しない4ペインを生成する。
+    # 上下を入れ替えて回避（上段=1ペイン全幅、下段=複数ペイン）。
+    if [ "$bottom_count" -eq 1 ] && [ "$top_count" -gt 1 ]; then
+        local _swap=$top_count
+        top_count=1
+        bottom_count=$_swap
+    fi
     local tab_panes=()
 
     # 上段を横に均等分割
+    # NOTE: macOS の BSD seq は "seq 1 0" が "1\n0" を返すため bash 算術ループを使う
     local current_pane="$top_row"
-    for i in $(seq 1 $((top_count - 1))); do
+    local i
+    for ((i=1; i<top_count; i++)); do
         local remaining=$((top_count - i))
         local pct=$(( 100 * remaining / (remaining + 1) ))
         local new_pane
@@ -174,7 +184,7 @@ create_agent_tab() {
 
     # 下段を横に均等分割
     current_pane="$bottom_row"
-    for i in $(seq 1 $((bottom_count - 1))); do
+    for ((i=1; i<bottom_count; i++)); do
         local remaining=$((bottom_count - i))
         local pct=$(( 100 * remaining / (remaining + 1) ))
         local new_pane
@@ -209,11 +219,11 @@ create_agent_tab() {
 #   │  S4  │     S5      │
 #   └──────┴─────────────┘
 # Tab 3 (Inspectors, --no-evaluate でない場合):
-#   ┌──────┬──────┐
-#   │  I1  │  I2  │
-#   ├──────┴──────┤
-#   │     I3      │
-#   └─────────────┘
+#   ┌──────────────┐
+#   │     I1       │
+#   ├──────┬───────┤
+#   │  I2  │  I3   │
+#   └──────┴───────┘
 create_session() {
     # セッション重複チェック: pane_mapが存在し、ペインが生きていれば既存セッションあり
     if [ -f "$PANE_MAP_FILE" ]; then
