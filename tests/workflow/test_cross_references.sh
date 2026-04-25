@@ -83,16 +83,35 @@ fi
 
 test_start "instruction 内の {report:*.md} 参照先が workflow 上で先行 step によって生成される"
 # Why: 存在しない report を参照すると engine が空文字列を埋め込み、指示が崩れる。
-# instruction ごとに「使う step 名」の対応が取りにくいので、全 instruction を横断して
-# 参照されるすべての report 名が、workflow 全体のどこかで生成されているかをチェックする。
+#      INSTRUCTION_DIR 全体を再帰走査すると他ワークフロー用 instruction の参照を拾い、
+#      ol-soldiers-style.yaml が生成しない report と突合して誤検出するため、
+#      この workflow が宣言する instruction ID の対応ファイルだけに限定して検証する。
 report_names_generated="$("$YQ" "$WORKFLOW_YAML" '.steps[].output_contracts.report[].name' 2>/dev/null | sort -u)"
 if [[ -z "$report_names_generated" ]]; then
     _record_fail "workflow が一つも report を生成していない"
 else
-    # Instruction ディレクトリから {report:xxx.md} を抽出
-    if [[ -d "$INSTRUCTION_DIR" ]]; then
+    # ol-soldiers-style.yaml が宣言する instruction ID を収集（step / monitor / team_leader）
+    decl_step_instr="$("$YQ" "$WORKFLOW_YAML" '.steps[].instruction' 2>/dev/null | sort -u || true)"
+    decl_monitor_instr="$("$YQ" "$WORKFLOW_YAML" '.loop_monitors[].judge.instruction' 2>/dev/null | sort -u || true)"
+    decl_tl_instr="$("$YQ" "$WORKFLOW_YAML" '.steps[].team_leader.instruction' 2>/dev/null | sort -u || true)"
+    decl_tl_part_instr="$("$YQ" "$WORKFLOW_YAML" '.steps[].team_leader.part_instruction' 2>/dev/null | sort -u || true)"
+    declared_instr="$(printf '%s\n%s\n%s\n%s\n' \
+        "$decl_step_instr" "$decl_monitor_instr" "$decl_tl_instr" "$decl_tl_part_instr" \
+        | sort -u | sed '/^$/d')"
+    instr_files=()
+    while IFS= read -r id; do
+        [[ -z "$id" ]] && continue
+        # ID 形式（英字/ハイフンのみ）に対応する instruction ファイルだけを対象化
+        if [[ "$id" =~ ^[a-z][a-z0-9-]*$ ]] && [[ -f "$INSTRUCTION_DIR/${id}.md" ]]; then
+            instr_files+=("$INSTRUCTION_DIR/${id}.md")
+        fi
+    done <<<"$declared_instr"
+    if (( ${#instr_files[@]} == 0 )); then
+        # workflow がインライン instruction のみで構成されている場合
+        _record_pass
+    else
         # grep -h: ファイル名抑制、-o: マッチ部分のみ
-        referenced="$(grep -rhoE '\{report:[^}]+\}' "$INSTRUCTION_DIR" 2>/dev/null \
+        referenced="$(grep -hoE '\{report:[^}]+\}' "${instr_files[@]}" 2>/dev/null \
             | sed -E 's/\{report:([^}]+)\}/\1/' | sort -u)"
         if [[ -z "$referenced" ]]; then
             # 参照がなくても OK (まだ実装前 / 意図的に持たない)

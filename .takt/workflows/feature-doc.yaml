@@ -1,0 +1,157 @@
+name: feature-doc
+description: 機能ドキュメント生成ワークフロー（機能名と出力先ディレクトリから対象コードを調査し、非エンジニア向けと技術詳細の 2 種類の doc を並列で生成し、読みやすさ優先のレビュー / 修正サイクルを回す）
+workflow_config:
+  provider_options:
+    codex:
+      network_access: false
+    opencode:
+      network_access: false
+max_steps: 30
+initial_step: plan
+loop_monitors:
+  - cycle:
+      - review
+      - fix
+    threshold: 3
+    judge:
+      persona: doc-reviewer
+      instruction: |
+        review と fix のサイクルが繰り返されました。最新の `{report:doc-review.md}` と `{report:doc-fix.md}` を読み比べ、サイクルが健全（指摘数が減少 / 修正が反映されている）か、非生産的（同一の指摘が繰り返されている）かを判定してください。
+      rules:
+        - condition: 健全（指摘減少・修正反映あり）
+          next: review
+        - condition: 非生産的（同一指摘の繰り返し）
+          next: ABORT
+steps:
+  - name: plan
+    edit: false
+    persona: doc-planner
+    instruction: doc-plan
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Bash
+    rules:
+      - condition: 機能名と出力先ディレクトリを抽出でき、対象コードと章立てを確定できた
+        next: investigate
+      - condition: 機能名または出力先ディレクトリが特定できない（情報不足）
+        next: ABORT
+    output_contracts:
+      report:
+        - name: doc-plan.md
+          format: doc-plan
+  - name: investigate
+    edit: false
+    persona: doc-investigator
+    instruction: doc-investigate
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Bash
+    rules:
+      - condition: 対象コードの構造化抽出が完了した
+        next: write_docs
+      - condition: 対象コードが見つからない / 調査不能
+        next: ABORT
+    output_contracts:
+      report:
+        - name: doc-investigate.md
+          format: doc-investigate
+  - name: write_docs
+    parallel:
+      - name: write_user_doc
+        edit: true
+        persona: doc-writer
+        instruction: write-user-doc
+        required_permission_mode: edit
+        provider_options:
+          claude:
+            allowed_tools:
+              - Read
+              - Glob
+              - Grep
+              - Edit
+              - Write
+              - Bash
+        rules:
+          - condition: 執筆完了
+          - condition: 執筆失敗
+        output_contracts:
+          report:
+            - name: user-doc-write.md
+              format: doc-write
+      - name: write_detail_doc
+        edit: true
+        persona: doc-writer
+        instruction: write-detail-doc
+        required_permission_mode: edit
+        provider_options:
+          claude:
+            allowed_tools:
+              - Read
+              - Glob
+              - Grep
+              - Edit
+              - Write
+              - Bash
+        rules:
+          - condition: 執筆完了
+          - condition: 執筆失敗
+        output_contracts:
+          report:
+            - name: detail-doc-write.md
+              format: doc-write
+    rules:
+      - condition: all("執筆完了")
+        next: review
+      - condition: any("執筆失敗")
+        next: ABORT
+  - name: review
+    edit: false
+    persona: doc-reviewer
+    instruction: review-doc
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+    rules:
+      - condition: 指摘なし
+        next: COMPLETE
+      - condition: 指摘あり
+        next: fix
+    output_contracts:
+      report:
+        - name: doc-review.md
+          format: doc-review
+  - name: fix
+    edit: true
+    persona: doc-writer
+    instruction: fix-doc
+    required_permission_mode: edit
+    pass_previous_response: false
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Edit
+          - Write
+          - Bash
+    rules:
+      - condition: 修正完了
+        next: review
+      - condition: 修正不能（指摘を反映できない）
+        next: ABORT
+    output_contracts:
+      report:
+        - name: doc-fix.md
+          format: doc-fix

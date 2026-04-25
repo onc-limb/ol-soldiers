@@ -16,6 +16,15 @@ SUITES=(
     "$SCRIPT_DIR/workflow/test_cross_references.sh"
     "$SCRIPT_DIR/workflow/test_generic_constraints.sh"
     "$SCRIPT_DIR/workflow/test_integration_flow.sh"
+    "$SCRIPT_DIR/workflow/test_instruction_scope_regression.sh"
+    "$SCRIPT_DIR/feature-doc/test_structure.sh"
+    "$SCRIPT_DIR/feature-doc/test_workflow_yaml.sh"
+    "$SCRIPT_DIR/feature-doc/test_personas.sh"
+    "$SCRIPT_DIR/feature-doc/test_instructions.sh"
+    "$SCRIPT_DIR/feature-doc/test_output_contracts.sh"
+    "$SCRIPT_DIR/feature-doc/test_cross_references.sh"
+    "$SCRIPT_DIR/feature-doc/test_generic_constraints.sh"
+    "$SCRIPT_DIR/feature-doc/test_integration_flow.sh"
 )
 
 total_pass=0
@@ -23,7 +32,9 @@ total_fail=0
 failed_suites=()
 
 for suite in "${SUITES[@]}"; do
-    name="$(basename "$suite")"
+    # Why: workflow/ と feature-doc/ で同名ファイルが併存するため、親ディレクトリを含めて
+    # 表示名にする。basename だけでは FAILED SUITES 一覧で衝突して区別がつかない。
+    name="$(basename "$(dirname "$suite")")/$(basename "$suite")"
     printf '\n=== %s ===\n' "$name"
     if bash "$suite"; then
         # suite 内 print_summary が exit 0 を返す → 全 pass
