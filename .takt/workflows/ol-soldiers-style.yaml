@@ -1,0 +1,246 @@
+name: ol-soldiers-style
+description: ol-soldiers 思想を takt に翻案した反復型協調ワークフロー（目的確定 → タスク分割 → 並列最大 3 実装 → タスク評価 → 目的評価 → サイクル繰り返し / エスカレーション）
+workflow_config:
+  provider_options:
+    codex:
+      network_access: true
+    opencode:
+      network_access: true
+max_steps: 60
+initial_step: intake
+loop_monitors:
+  - cycle:
+      - plan_split
+      - goal_review
+    threshold: 3
+    judge:
+      persona: facilitator
+      instruction: loop-monitor-cycle
+      rules:
+        - condition: 健全（進捗あり）
+          next: plan_split
+        - condition: 非生産的（改善なし・サイクル上限超過）
+          next: escalate_cycle_limit
+steps:
+  - name: intake
+    edit: false
+    persona: commander
+    instruction: intake
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Bash
+          - WebSearch
+          - WebFetch
+    rules:
+      - condition: 目的・Done を確定できた
+        next: plan_split
+      - condition: 情報不足のためユーザーへ質問が必要
+        next: escalate_info_gap
+    output_contracts:
+      report:
+        - name: intake.md
+          format: intake
+  - name: plan_split
+    edit: false
+    persona: sergeant
+    instruction: plan-split
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Bash
+    rules:
+      - condition: タスク分割が完了した
+        next: execute
+    output_contracts:
+      report:
+        - name: plan-split.md
+          format: plan-split
+  - name: execute
+    edit: true
+    persona: sergeant
+    instruction: execute-team-leader
+    session: refresh
+    required_permission_mode: edit
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Edit
+          - Write
+          - Bash
+    team_leader:
+      max_parts: 3
+      part_persona: soldier
+      part_edit: true
+      part_permission_mode: edit
+      part_allowed_tools:
+        - Read
+        - Glob
+        - Grep
+        - Edit
+        - Write
+        - Bash
+    rules:
+      - condition: 全タスクの実装が完了した
+        next: task_review
+      - condition: Soldier または Sergeant が判断に詰まった
+        next: escalate_blocked
+    output_contracts:
+      report:
+        - name: execute.md
+          format: execute
+  - name: task_review
+    edit: false
+    persona: task-inspector
+    instruction: task-review
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+    rules:
+      - condition: any("needs_revision", "rejected")
+        next: execute
+      - condition: all("approved")
+        next: completion_check
+    output_contracts:
+      report:
+        - name: task-review.md
+          format: task-review
+  - name: completion_check
+    edit: false
+    persona: sergeant
+    instruction: completion-check
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+    rules:
+      - condition: 全タスクが approved で完了
+        next: goal_review
+      - condition: 未完了タスクがある
+        next: execute
+    output_contracts:
+      report:
+        - name: completion-check.md
+          format: completion-check
+  - name: goal_review
+    edit: false
+    persona: goal-inspector
+    instruction: goal-review
+    pass_previous_response: false
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Bash
+    rules:
+      - condition: 目的達成 かつ テスト通過（approved）
+        next: COMPLETE
+      - condition: needs_more_cycles（追加サイクルで改善可能）
+        next: summarize_cycle
+      - condition: blocked（追加サイクルで解決不能）
+        next: escalate_blocked
+    output_contracts:
+      report:
+        - name: goal-review.md
+          format: goal-review
+  - name: summarize_cycle
+    edit: false
+    persona: facilitator
+    instruction: cycle-summary
+    session: refresh
+    pass_previous_response: false
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+    rules:
+      - condition: サイクル要約が完了した
+        next: plan_split
+    output_contracts:
+      report:
+        - name: cycle-summary.md
+          format: cycle-summary
+  - name: escalate_info_gap
+    edit: false
+    persona: facilitator
+    instruction: escalate-summary
+    pass_previous_response: false
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+    rules:
+      - condition: ユーザーへの質問が必要
+        next: escalate_info_gap
+        requires_user_input: true
+        interactive_only: true
+      - condition: ユーザー対話が完了しワークフローを終了する
+        next: ABORT
+    output_contracts:
+      report:
+        - name: escalate-summary.md
+          format: escalate-summary
+  - name: escalate_blocked
+    edit: false
+    persona: facilitator
+    instruction: escalate-summary
+    pass_previous_response: false
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+    rules:
+      - condition: ユーザーへの質問が必要
+        next: escalate_blocked
+        requires_user_input: true
+        interactive_only: true
+      - condition: ユーザー対話が完了しワークフローを終了する
+        next: ABORT
+    output_contracts:
+      report:
+        - name: escalate-summary.md
+          format: escalate-summary
+  - name: escalate_cycle_limit
+    edit: false
+    persona: facilitator
+    instruction: escalate-summary
+    pass_previous_response: false
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+    rules:
+      - condition: ユーザーへの現状サマリ提示が必要
+        next: escalate_cycle_limit
+        requires_user_input: true
+        interactive_only: true
+      - condition: ユーザー対話が完了しワークフローを終了する
+        next: ABORT
+    output_contracts:
+      report:
+        - name: escalate-summary.md
+          format: escalate-summary
