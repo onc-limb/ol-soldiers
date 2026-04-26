@@ -3,10 +3,10 @@
 #
 # 単体テストは個別の step / persona / instruction を検証する。ここでは
 # 「intake → plan_split → execute → task_review → completion_check →
-#  goal_review → (summarize_cycle → plan_split) | escalate_*」という
+#  goal_review → (summarize_cycle → plan_split) | pr_create → COMPLETE」という
 # 複数モジュール横断のデータフロー全体が、ルール配線として成立するかを検証する。
 #
-# これは単純な grep を超えた、phase 間遷移の合流・分岐・ループ条件の検証である。
+# 新仕様: 情報不足や blocker でユーザーへ質問せず、PR 本文に明記して pr_create で完結する。
 
 set -u
 
@@ -34,8 +34,8 @@ next_targets_of() {
         | sort -u
 }
 
-# intake の遷移先に plan_split と escalate_info_gap が含まれる
-test_start "intake から plan_split への通常遷移が定義されている"
+# intake → plan_split の単一遷移（情報不足時もエスカレーションしない）
+test_start "intake から plan_split への遷移が定義されている"
 targets="$(next_targets_of intake)"
 if grep -qxF plan_split <<<"$targets"; then
     _record_pass
@@ -43,17 +43,12 @@ else
     _record_fail "intake → plan_split 遷移がない (targets: $(tr '\n' ',' <<<"$targets"))"
 fi
 
-test_start "intake から escalate_info_gap への遷移が定義されている (情報不足時)"
+test_start "intake が escalate_info_gap への分岐を持たない"
+# Why: 新仕様では情報不足でもユーザーへ質問せず assumptions / open_questions に記録して進む。
 if grep -qxF escalate_info_gap <<<"$targets"; then
-    _record_pass
+    _record_fail "intake から escalate_info_gap への遷移が残存している"
 else
-    # intake 自身に留まる requires_user_input: true パターンも許容
-    intake_rules="$("$YQ" "$WORKFLOW_YAML" '.steps[] | select(.name == "intake") | .rules' 2>/dev/null || true)"
-    if grep -q 'requires_user_input' <<<"$intake_rules"; then
-        _record_pass
-    else
-        _record_fail "intake から escalate_info_gap への遷移がない"
-    fi
+    _record_pass
 fi
 
 # plan_split → execute
@@ -99,13 +94,13 @@ else
     _record_fail "completion_check → goal_review 遷移がない"
 fi
 
-# goal_review 分岐: COMPLETE / summarize_cycle (needs_more_cycles) / escalate_blocked
-test_start "goal_review から COMPLETE への遷移が定義されている"
+# goal_review 分岐: pr_create (approved / blocked) / summarize_cycle (needs_more_cycles)
+test_start "goal_review から pr_create への遷移が定義されている (approved / blocked 共に)"
 targets="$(next_targets_of goal_review)"
-if grep -qxF COMPLETE <<<"$targets"; then
+if grep -qxF pr_create <<<"$targets"; then
     _record_pass
 else
-    _record_fail "goal_review → COMPLETE 遷移がない"
+    _record_fail "goal_review → pr_create 遷移がない"
 fi
 
 test_start "goal_review から summarize_cycle への遷移が定義されている"
@@ -115,11 +110,12 @@ else
     _record_fail "goal_review → summarize_cycle 遷移がない"
 fi
 
-test_start "goal_review から escalate_blocked への遷移が定義されている"
+test_start "goal_review が escalate_blocked への分岐を持たない"
+# Why: 新仕様では blocked でも pr_create に進み、blocker を PR 本文に明記する。
 if grep -qxF escalate_blocked <<<"$targets"; then
-    _record_pass
+    _record_fail "goal_review から escalate_blocked への遷移が残存している"
 else
-    _record_fail "goal_review → escalate_blocked 遷移がない"
+    _record_pass
 fi
 
 # summarize_cycle → plan_split (サイクル再開)
@@ -131,63 +127,45 @@ else
     _record_fail "summarize_cycle → plan_split 遷移がない (サイクルが繋がらない)"
 fi
 
-# loop_monitors が plan_split → goal_review サイクルを escalate_cycle_limit にルーティングする
-test_start "loop_monitors の judge.rules に escalate_cycle_limit への遷移がある"
+# loop_monitors が plan_split → goal_review サイクルを pr_create にルーティングする
+test_start "loop_monitors の judge.rules に pr_create への遷移がある (サイクル上限到達時)"
 monitor_rules="$("$YQ" "$WORKFLOW_YAML" '.loop_monitors[].judge.rules' 2>/dev/null || true)"
+if grep -q 'pr_create' <<<"$monitor_rules"; then
+    _record_pass
+else
+    _record_fail "loop_monitors judge rules に pr_create 遷移がない (サイクル上限が PR で確定しない)"
+fi
+
+test_start "loop_monitors の judge.rules に escalate_cycle_limit が残存していない"
+# Why: 新仕様ではサイクル上限到達でもユーザーへ質問せず pr_create で確定する。
 if grep -q 'escalate_cycle_limit' <<<"$monitor_rules"; then
-    _record_pass
+    _record_fail "loop_monitors judge rules に旧 escalate_cycle_limit 遷移が残存している"
 else
-    _record_fail "loop_monitors judge rules に escalate_cycle_limit 遷移がない (サイクル上限が強制されない)"
+    _record_pass
 fi
 
-# escalate_* ステップは終端 (外へ次遷移しない / 自分自身に戻って user_input)
-test_start "escalate_info_gap は終端扱い (自身に留まる or COMPLETE/ABORT 以外の次 step に出ない)"
-targets="$(next_targets_of escalate_info_gap)"
-# escalate_* は requires_user_input: true で自己ループするか、ABORT で終わるのが許容形
-invalid=""
-while IFS= read -r t; do
-    [[ -z "$t" ]] && continue
-    case "$t" in
-        escalate_info_gap|COMPLETE|ABORT) ;;
-        *) invalid="${invalid}${t} " ;;
-    esac
-done <<<"$targets"
-if [[ -z "$invalid" ]]; then
+# pr_create → COMPLETE 終端
+test_start "pr_create から COMPLETE への遷移が定義されている"
+targets="$(next_targets_of pr_create)"
+if grep -qxF COMPLETE <<<"$targets"; then
     _record_pass
 else
-    _record_fail "escalate_info_gap が通常 step に遷移している (許容は自身/COMPLETE/ABORT のみ): $invalid"
+    _record_fail "pr_create → COMPLETE 遷移がない (ワークフロー終端が確定しない)"
 fi
 
-test_start "escalate_blocked は終端扱い"
-targets="$(next_targets_of escalate_blocked)"
-invalid=""
-while IFS= read -r t; do
-    [[ -z "$t" ]] && continue
-    case "$t" in
-        escalate_blocked|COMPLETE|ABORT) ;;
-        *) invalid="${invalid}${t} " ;;
-    esac
-done <<<"$targets"
-if [[ -z "$invalid" ]]; then
+# 旧 escalate_* step が完全に削除されている
+test_start "旧 escalate_info_gap / escalate_blocked / escalate_cycle_limit step が存在しない"
+all_steps="$("$YQ" "$WORKFLOW_YAML" '.steps[].name' 2>/dev/null || true)"
+remaining=""
+for forbidden in escalate_info_gap escalate_blocked escalate_cycle_limit; do
+    if grep -qxF "$forbidden" <<<"$all_steps"; then
+        remaining="${remaining}${forbidden} "
+    fi
+done
+if [[ -z "$remaining" ]]; then
     _record_pass
 else
-    _record_fail "escalate_blocked が通常 step に遷移している: $invalid"
-fi
-
-test_start "escalate_cycle_limit は終端扱い"
-targets="$(next_targets_of escalate_cycle_limit)"
-invalid=""
-while IFS= read -r t; do
-    [[ -z "$t" ]] && continue
-    case "$t" in
-        escalate_cycle_limit|COMPLETE|ABORT) ;;
-        *) invalid="${invalid}${t} " ;;
-    esac
-done <<<"$targets"
-if [[ -z "$invalid" ]]; then
-    _record_pass
-else
-    _record_fail "escalate_cycle_limit が通常 step に遷移している: $invalid"
+    _record_fail "旧 escalate step が残存: $remaining"
 fi
 
 print_summary

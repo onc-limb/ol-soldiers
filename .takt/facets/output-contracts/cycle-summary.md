@@ -26,7 +26,16 @@
 |------|------|--------------|
 | {課題 1} | {原因} | {次サイクルで何を優先するか} |
 
-## 5. 成果物ポインタ
+## 5. 累積 assumptions / open_questions（PR で確認に回す）
+
+- assumptions:
+    - {このサイクルまでに置いた仮定の累積}
+- open_questions:
+    - {ユーザーに最終確認したい未解決事項。次サイクルで解消したら削る}
+
+（intake.md / execute.md / goal-review.md から拾い上げ、解消済みのものは消す）
+
+## 6. 成果物ポインタ
 
 - plan-split.md
 - execute.md

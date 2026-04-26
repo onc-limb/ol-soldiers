@@ -25,8 +25,11 @@ assert_contains "$intake" "gh issue view" "gh issue view コマンド"
 test_start "intake.md が URL 以外は直接入力として扱う分岐を記述している"
 assert_contains "$intake" "直接入力|plain text|それ以外" "直接入力フォールバック"
 
-test_start "intake.md が情報不足検知時の escalate_info_gap 遷移を記述している"
-assert_contains "$intake" "情報不足|escalate_info_gap|質問" "情報不足時の遷移"
+test_start "intake.md が情報不足時の取り扱い (assumptions / open_questions として記録) を記述している"
+# Why: 旧仕様では escalate_info_gap で停止していたが、新仕様では assumptions / open_questions
+# に記録して PR で確認に回す。停止せず先へ進める方針が反映されているかを確認。
+assert_contains "$intake" "情報不足|assumptions|open_questions" "情報不足の取り扱い"
+assert_contains "$intake" "停止せず|先へ進め|PR で確認" "停止しない方針"
 
 # plan-split: 関連ファイル / 依存関係 / 並列可否を必須化する指示
 plan_split="$INSTRUCTION_DIR/plan-split.md"
@@ -98,12 +101,20 @@ test_start "cycle-summary.md が生の思考・探索ログを捨てる方針を
 # Why: 中間成果を次サイクルに流さない要件の担保。
 assert_contains "$cycle_summary" "生の|思考|探索ログ|中間成果|破棄|捨" "中間成果破棄"
 
-# escalate-summary: 3 フィールド
-escalate_summary="$INSTRUCTION_DIR/escalate-summary.md"
-test_start "escalate-summary.md が成果物 / ブロッカー / 質問 を要約する指示を持つ"
-assert_contains "$escalate_summary" "成果物|これまでの" "成果物"
-assert_contains "$escalate_summary" "ブロッカー|blocker|障害" "ブロッカー"
-assert_contains "$escalate_summary" "質問|確認したい|聞きたい" "質問"
+# pr-create: PR 本文に open_questions / blockers / assumptions を転記する責務
+pr_create="$INSTRUCTION_DIR/pr-create.md"
+test_start "pr-create.md が PR 本文に assumptions / open_questions / blockers を必ず含める指示を持つ"
+# Why: 旧仕様の escalate-summary（ユーザー対話で停止）を置き換え、停止せず PR 本文に
+# 不足情報を明記する責務へ転換。PR レビュー時にユーザーが回答する設計。
+assert_contains "$pr_create" "assumptions" "assumptions 転記"
+assert_contains "$pr_create" "open_questions|ユーザー確認|質問" "open_questions 転記"
+assert_contains "$pr_create" "blocker" "blockers 転記"
+assert_contains "$pr_create" "gh pr create" "gh pr create コマンド"
+
+test_start "pr-create.md が完了状況 (success / partial / blocked) の判定基準を記述している"
+assert_contains "$pr_create" "success" "success"
+assert_contains "$pr_create" "partial" "partial"
+assert_contains "$pr_create" "blocked" "blocked"
 
 # loop-monitor-cycle: cycle_count 展開
 loop_monitor="$INSTRUCTION_DIR/loop-monitor-cycle.md"

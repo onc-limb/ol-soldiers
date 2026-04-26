@@ -32,12 +32,25 @@ actual="$(query '.initial_step' 2>/dev/null || echo '<missing>')"
 assert_equals "intake" "$actual" "workflow.initial_step"
 
 test_start "必須 step がすべて定義されている"
+# Why: 新仕様では escalate_* の代わりに pr_create で完結させる。情報不足や blocker は
+#      PR 本文に明記して終端へ進む。
 steps="$(query '.steps[].name' 2>/dev/null || true)"
-for required in intake plan_split execute task_review completion_check goal_review summarize_cycle escalate_info_gap escalate_blocked escalate_cycle_limit; do
+for required in intake plan_split execute task_review completion_check goal_review summarize_cycle pr_create; do
     if grep -qxE "$required" <<<"$steps"; then
         _record_pass
     else
         _record_fail "steps に $required が存在しない"
+    fi
+done
+
+test_start "旧 escalate_* step が削除されている"
+# Why: ユーザー対話で停止する旧仕様 step が残っていると loop_monitors / goal_review の
+#      ルーティングが二重定義になる。
+for forbidden in escalate_info_gap escalate_blocked escalate_cycle_limit; do
+    if grep -qxE "$forbidden" <<<"$steps"; then
+        _record_fail "旧 step $forbidden が削除されていない"
+    else
+        _record_pass
     fi
 done
 
@@ -69,36 +82,29 @@ else
     _record_fail "loop_monitors.cycle に plan_split と goal_review の組が存在しない"
 fi
 
-test_start "escalate_info_gap が requires_user_input=true である"
-# rules の中の requires_user_input を探す: intake → escalate_info_gap の遷移、
-# または escalate_info_gap 自身が requires_user_input を持つ形の両方を許容する。
-rules_json="$(query '.steps[] | select(.name == "escalate_info_gap") | .rules' 2>/dev/null || true)"
-if grep -q 'requires_user_input' <<<"$rules_json" || grep -q 'true' <<<"$rules_json"; then
-    _record_pass
+test_start "ワークフロー全体に requires_user_input=true が存在しない"
+# Why: 新仕様ではユーザー対話で停止せず、不足情報を PR 本文に明記して終端へ進む。
+#      requires_user_input が残っていると旧 escalate ルートが残存していることになる。
+all_rules="$(query '.steps[].rules' 2>/dev/null || true)"
+all_monitor_rules="$(query '.loop_monitors[].judge.rules' 2>/dev/null || true)"
+combined="$all_rules
+$all_monitor_rules"
+if grep -q 'requires_user_input' <<<"$combined"; then
+    _record_fail "requires_user_input が残存している（旧 escalate ルート未削除）"
 else
-    # intake 側で requires_user_input をつけるパターンも許容
-    intake_rules="$(query '.steps[] | select(.name == "intake") | .rules' 2>/dev/null || true)"
-    if grep -q 'requires_user_input' <<<"$intake_rules"; then
-        _record_pass
-    else
-        _record_fail "escalate_info_gap にも intake にも requires_user_input: true が見つからない"
-    fi
+    _record_pass
 fi
 
-test_start "escalate_blocked が requires_user_input=true を持つ"
-rules_json="$(query '.steps[] | select(.name == "escalate_blocked") | .rules' 2>/dev/null || true)"
-if grep -q 'requires_user_input' <<<"$rules_json"; then
+test_start "intake から plan_split への遷移が存在し、ユーザー対話分岐がない"
+# Why: 旧仕様では intake → escalate_info_gap だったが、新仕様では intake は常に plan_split
+#      へ進む（情報不足時は assumptions / open_questions に記録）。
+intake_rules="$(query '.steps[] | select(.name == "intake") | .rules' 2>/dev/null || true)"
+if grep -q '"next":"plan_split"' <<<"$intake_rules" \
+    && ! grep -q 'requires_user_input' <<<"$intake_rules" \
+    && ! grep -q 'escalate' <<<"$intake_rules"; then
     _record_pass
 else
-    _record_fail "escalate_blocked に requires_user_input: true がない"
-fi
-
-test_start "escalate_cycle_limit が requires_user_input=true を持つ"
-rules_json="$(query '.steps[] | select(.name == "escalate_cycle_limit") | .rules' 2>/dev/null || true)"
-if grep -q 'requires_user_input' <<<"$rules_json"; then
-    _record_pass
-else
-    _record_fail "escalate_cycle_limit に requires_user_input: true がない"
+    _record_fail "intake に旧 escalate 遷移または requires_user_input が残存している"
 fi
 
 test_start "task_review の rules に needs_revision or rejected → execute の遷移がある"
@@ -109,16 +115,37 @@ else
     _record_fail "task_review の差し戻し遷移が見つからない"
 fi
 
-test_start "goal_review の rules に approved→COMPLETE / needs_more_cycles / blocked→escalate_blocked が揃う"
+test_start "goal_review の rules に approved→pr_create / needs_more_cycles / blocked→pr_create が揃う"
+# Why: 新仕様では blocked でもユーザー対話で停止せず pr_create で PR を作成する。
+#      approved も pr_create を経由してから COMPLETE に至る。
 rules_json="$(query '.steps[] | select(.name == "goal_review") | .rules' 2>/dev/null || true)"
 missing=""
-grep -q 'COMPLETE' <<<"$rules_json" || missing="${missing}approved→COMPLETE "
+grep -q '"next":"pr_create"' <<<"$rules_json" || missing="${missing}pr_create遷移 "
 grep -q 'needs_more_cycles' <<<"$rules_json" || missing="${missing}needs_more_cycles "
-grep -q 'escalate_blocked' <<<"$rules_json" || missing="${missing}blocked→escalate_blocked "
+grep -q 'blocked' <<<"$rules_json" || missing="${missing}blocked条件 "
 if [[ -z "$missing" ]]; then
     _record_pass
 else
     _record_fail "goal_review に欠けている遷移: $missing"
+fi
+
+test_start "pr_create の rules が COMPLETE 終端に至る"
+# Why: pr_create はワークフロー終端。PR 作成後はユーザーレビューに引き渡して COMPLETE。
+rules_json="$(query '.steps[] | select(.name == "pr_create") | .rules' 2>/dev/null || true)"
+if grep -q 'COMPLETE' <<<"$rules_json"; then
+    _record_pass
+else
+    _record_fail "pr_create から COMPLETE への遷移がない"
+fi
+
+test_start "loop_monitors の judge.rules に pr_create への遷移がある (サイクル上限到達時)"
+# Why: 旧仕様では escalate_cycle_limit でユーザーへ質問していたが、新仕様ではサイクル上限
+#      到達時も pr_create で PR を作成し、PR 本文に未達 Done を明記する。
+monitor_rules="$(query '.loop_monitors[].judge.rules' 2>/dev/null || true)"
+if grep -q 'pr_create' <<<"$monitor_rules"; then
+    _record_pass
+else
+    _record_fail "loop_monitors judge rules に pr_create 遷移がない (サイクル上限が PR で確定しない)"
 fi
 
 test_start "summarize_cycle が session: refresh を持つ"

@@ -10,13 +10,14 @@
 - `{report:goal-review.md}`（目的評価）
 - `{report:cycle-summary.md}`（前サイクル要約、2 サイクル目以降）
 
-**サイクル跨ぎで保持する 5 要素（＋サイクル番号）:**
+**サイクル跨ぎで保持する 6 要素（＋サイクル番号）:**
 
 1. **目的**: `intake.md` の purpose を転記
 2. **達成状況**（達成条件テーブル）: Done 項目ごとに 充足 / 未充足 / 不明 を記録（`goal-review.md` の acceptance_status を転記）
 3. **決定事項**: このサイクルで確定した設計判断・仕様決定
 4. **未解決課題**（残課題）: 次サイクルへ持ち越す課題、原因、引き継ぎ事項
-5. **成果物ポインタ**: plan / execute / task-review / goal-review の各レポートファイル名のみ（本文は含めない）
+5. **累積 assumptions / open_questions**: `intake.md` / `execute.md` / `goal-review.md` から拾い、解消済みのものは削る。最終的に `pr_create` へ引き渡す PR 本文の素材になる
+6. **成果物ポインタ**: plan / execute / task-review / goal-review の各レポートファイル名のみ（本文は含めない）
 
 サイクル番号（`cycle_count` / サイクル番号）を記載する。
 

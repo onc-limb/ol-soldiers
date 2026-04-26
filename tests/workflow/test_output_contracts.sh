@@ -72,16 +72,28 @@ assert_contains "$cycle_summary" "成果物|ポインタ" "成果物ポインタ
 test_start "output-contracts/cycle-summary.md がサイクル番号を要求する"
 assert_contains "$cycle_summary" "サイクル.*番号|cycle.*number|cycle_count" "サイクル番号"
 
-# escalate-summary: 4 要素
-escalate_summary="$CONTRACT_DIR/escalate-summary.md"
-test_start "output-contracts/escalate-summary.md が 4 要素 (停止理由/成果物/ブロッカー/質問) を要求する"
-assert_contains "$escalate_summary" "停止.*理由|理由|reason" "停止理由"
-assert_contains "$escalate_summary" "成果物|これまで" "成果物"
-assert_contains "$escalate_summary" "ブロッカー|blocker" "ブロッカー"
-assert_contains "$escalate_summary" "質問|確認したい" "質問"
+# pr-create: 完了状況 + PR URL + open_questions / blockers / assumptions
+pr_create="$CONTRACT_DIR/pr-create.md"
+test_start "output-contracts/pr-create.md が完了状況 (success / partial / blocked) を要求する"
+# Why: 旧仕様の escalate-summary を置き換え。情報不足や blocker は PR 本文に明記して
+#      ワークフローを完了させる設計。完了状況フィールドはレビュー時の最終判断材料。
+assert_contains "$pr_create" "success" "success"
+assert_contains "$pr_create" "partial" "partial"
+assert_contains "$pr_create" "blocked" "blocked"
 
-test_start "output-contracts/escalate-summary.md が質問数を 1-3 項目に制限している"
-# Why: 計画レポートで「ユーザーに確認したいこと (1-3 項目)」と明示されている。
-assert_contains "$escalate_summary" "1.*3|3 ?項目|3 ?件|最大 ?3" "1-3 項目制限"
+test_start "output-contracts/pr-create.md が PR URL を要求する"
+assert_contains "$pr_create" "url|URL|PR.*url" "PR URL"
+
+test_start "output-contracts/pr-create.md が assumptions / open_questions / blockers を要求する"
+assert_contains "$pr_create" "assumptions" "assumptions"
+assert_contains "$pr_create" "open_questions" "open_questions"
+assert_contains "$pr_create" "blocker" "blockers"
+
+# intake: 情報不足を assumptions / open_questions に持ち回る新仕様
+test_start "output-contracts/intake.md が assumptions と open_questions のフィールドを要求する"
+# Why: 新仕様では情報不足時もユーザーへ質問せず、assumptions と open_questions に記録して
+#      PR 本文に転記する。これらフィールドは PR で最終確認するための持ち回りデータ。
+assert_contains "$intake" "assumptions" "assumptions"
+assert_contains "$intake" "open_questions" "open_questions"
 
 print_summary

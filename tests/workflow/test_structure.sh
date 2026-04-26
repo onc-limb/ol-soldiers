@@ -27,7 +27,7 @@ for name in commander sergeant soldier task-inspector goal-inspector facilitator
 done
 
 test_start "Facilitator + 各 phase の instruction ファイルが配置されている"
-# Why: 計画で挙げられた全 instruction。cycle-summary / escalate-summary は
+# Why: 計画で挙げられた全 instruction。cycle-summary / pr-create は
 # phase step 名ではなく report 生成用の持ち回り instruction として扱う。
 for name in \
     intake \
@@ -37,7 +37,7 @@ for name in \
     completion-check \
     goal-review \
     cycle-summary \
-    escalate-summary \
+    pr-create \
     loop-monitor-cycle; do
     assert_file_exists "$INSTRUCTION_DIR/${name}.md"
 done
@@ -51,7 +51,7 @@ for name in \
     completion-check \
     goal-review \
     cycle-summary \
-    escalate-summary; do
+    pr-create; do
     assert_file_exists "$CONTRACT_DIR/${name}.md"
 done
 

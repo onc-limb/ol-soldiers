@@ -1,5 +1,5 @@
 name: ol-soldiers-style
-description: ol-soldiers 思想を takt に翻案した反復型協調ワークフロー（目的確定 → タスク分割 → 並列最大 3 実装 → タスク評価 → 目的評価 → サイクル繰り返し / エスカレーション）
+description: ol-soldiers 思想を takt に翻案した反復型協調ワークフロー（目的確定 → タスク分割 → 並列最大 3 実装 → タスク評価 → 目的評価 → サイクル繰り返し → PR 作成で完結。情報不足や blocker はユーザーへ質問せず、PR 本文に明記する）
 workflow_config:
   provider_options:
     codex:
@@ -20,7 +20,7 @@ loop_monitors:
         - condition: 健全（進捗あり）
           next: plan_split
         - condition: 非生産的（改善なし・サイクル上限超過）
-          next: escalate_cycle_limit
+          next: pr_create
 steps:
   - name: intake
     edit: false
@@ -36,10 +36,8 @@ steps:
           - WebSearch
           - WebFetch
     rules:
-      - condition: 目的・Done を確定できた
+      - condition: 目的・Done を確定できた、または不足情報を assumptions / open_questions として記録した上で進められる
         next: plan_split
-      - condition: 情報不足のためユーザーへ質問が必要
-        next: escalate_info_gap
     output_contracts:
       report:
         - name: intake.md
@@ -90,10 +88,8 @@ steps:
         - Write
         - Bash
     rules:
-      - condition: 全タスクの実装が完了した
+      - condition: 全タスクの実装が完了した、または blocker を execute.md に記録した上で次工程へ引き渡せる
         next: task_review
-      - condition: Soldier または Sergeant が判断に詰まった
-        next: escalate_blocked
     output_contracts:
       report:
         - name: execute.md
@@ -150,11 +146,11 @@ steps:
           - Bash
     rules:
       - condition: 目的達成 かつ テスト通過（approved）
-        next: COMPLETE
+        next: pr_create
       - condition: needs_more_cycles（追加サイクルで改善可能）
         next: summarize_cycle
       - condition: blocked（追加サイクルで解決不能）
-        next: escalate_blocked
+        next: pr_create
     output_contracts:
       report:
         - name: goal-review.md
@@ -178,10 +174,10 @@ steps:
       report:
         - name: cycle-summary.md
           format: cycle-summary
-  - name: escalate_info_gap
+  - name: pr_create
     edit: false
     persona: facilitator
-    instruction: escalate-summary
+    instruction: pr-create
     pass_previous_response: false
     provider_options:
       claude:
@@ -189,58 +185,11 @@ steps:
           - Read
           - Glob
           - Grep
+          - Bash
     rules:
-      - condition: ユーザーへの質問が必要
-        next: escalate_info_gap
-        requires_user_input: true
-        interactive_only: true
-      - condition: ユーザー対話が完了しワークフローを終了する
-        next: ABORT
+      - condition: PR を作成しワークフローを完了する
+        next: COMPLETE
     output_contracts:
       report:
-        - name: escalate-summary.md
-          format: escalate-summary
-  - name: escalate_blocked
-    edit: false
-    persona: facilitator
-    instruction: escalate-summary
-    pass_previous_response: false
-    provider_options:
-      claude:
-        allowed_tools:
-          - Read
-          - Glob
-          - Grep
-    rules:
-      - condition: ユーザーへの質問が必要
-        next: escalate_blocked
-        requires_user_input: true
-        interactive_only: true
-      - condition: ユーザー対話が完了しワークフローを終了する
-        next: ABORT
-    output_contracts:
-      report:
-        - name: escalate-summary.md
-          format: escalate-summary
-  - name: escalate_cycle_limit
-    edit: false
-    persona: facilitator
-    instruction: escalate-summary
-    pass_previous_response: false
-    provider_options:
-      claude:
-        allowed_tools:
-          - Read
-          - Glob
-          - Grep
-    rules:
-      - condition: ユーザーへの現状サマリ提示が必要
-        next: escalate_cycle_limit
-        requires_user_input: true
-        interactive_only: true
-      - condition: ユーザー対話が完了しワークフローを終了する
-        next: ABORT
-    output_contracts:
-      report:
-        - name: escalate-summary.md
-          format: escalate-summary
+        - name: pr-create.md
+          format: pr-create
